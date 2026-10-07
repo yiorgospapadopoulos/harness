@@ -1,0 +1,28 @@
+[
+  {
+    "name": "cv-page",
+    "path": "/Users/example/projects/cv-page",
+    "default_branch": "main",
+    "worktree": {
+      "default": true,
+      "link": [
+        ".env.local"
+      ],
+      "setup": [
+        "npm ci"
+      ],
+      "setup_timeout_seconds": 900
+    }
+  },
+  {
+    "name": "llm-hunter",
+    "path": "/Users/example/projects/llm-hunter",
+    "default_branch": "develop",
+    "worktree": {
+      "default": false,
+      "link": [],
+      "setup": [],
+      "setup_timeout_seconds": 300
+    }
+  }
+]
