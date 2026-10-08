@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../api/client.ts";
-import type { Session } from "../../api/types.ts";
+import type { JsonValue, Session } from "../../api/types.ts";
 import { defined } from "../../test/defined.ts";
 import { fakeApi } from "../../test/fakeApi.ts";
 import { approval, repo, session } from "../../test/fixtures.ts";
@@ -56,6 +56,22 @@ describe("Projects", () => {
     expect(row(/Validate contact form, Running/)).toBeInTheDocument();
   });
 
+  it("follows projects added and removed on the Mac", async () => {
+    const { user, push } = await openProjects([session({ id: "a", repo: "narrative" })]);
+    await user.click(screen.getByRole("tab", { name: /narrative/ }));
+
+    push({
+      type: "repo.added",
+      payload: { name: "notes", repo: repo("notes") as unknown as JsonValue },
+    });
+    expect(screen.getByRole("tab", { name: /notes/ })).toBeInTheDocument();
+    push({ type: "repo.removed", payload: { name: "narrative" } });
+
+    expect(screen.queryByRole("tab", { name: /narrative/ })).not.toBeInTheDocument();
+    // The project on screen went away: the first one shows instead.
+    expect(screen.getByRole("tab", { name: /cv-page/ })).toHaveAttribute("aria-selected", "true");
+  });
+
   it("groups chats and folds archived ones", async () => {
     const { user } = await openProjects([
       session({ id: "p", title: "Pinned one", pinned: true }),
@@ -97,6 +113,17 @@ describe("Projects", () => {
     await user.click(screen.getByRole("button", { name: "New chat in cv-page" }));
 
     expect(screen.getByRole("region", { name: "New chat" })).toBeInTheDocument();
+  });
+
+  it("returns focus to the chat's row after closing it", async () => {
+    const { user } = await openProjects([session()]);
+    // A tap on the phone leaves focus where it was; the row gets it back all the same.
+    fireEvent.click(row(/Validate contact form, Idle/));
+    await screen.findByRole("region", { name: "Validate contact form" });
+
+    await user.click(screen.getByRole("button", { name: "Back to cv-page" }));
+
+    expect(row(/Validate contact form, Idle/)).toHaveFocus();
   });
 
   it("opens actions with long-press, swipe, context menu and the dots button", async () => {
