@@ -10,14 +10,9 @@ private let workspace = CGSize(width: 1000, height: 600)
 @Suite struct AppStoreTests {
     let api = FakeAPI()
     let memory = MemoryStore()
-    let approvals: ApprovalsStore
-
-    init() {
-        approvals = ApprovalsStore(api: api)
-    }
 
     func app() -> AppStore {
-        AppStore(api: api, approvals: approvals, store: memory)
+        AppStore(api: api, store: memory)
     }
 
     @Test func numberAndArrowShortcutsPickTabs() async throws {
@@ -179,20 +174,6 @@ private let workspace = CGSize(width: 1000, height: 600)
         #expect(app.projects.isEmpty)
     }
 
-    @Test func backgroundTabsGlowWithPendingApprovals() async throws {
-        api.set { $0.approvals = Fixture.approvals }
-        try await approvals.load()
-        let app = app()
-        try await app.loadRepos()
-        app.openProject("llm-hunter")
-
-        #expect(app.attention(of: "cv-page") == 2)
-        #expect(app.attention(of: "llm-hunter") == 0)
-        #expect(app.glowingProjects == ["cv-page"])
-        app.selectProject("cv-page")
-        #expect(app.glowingProjects.isEmpty)
-    }
-
     @Test func aDeletedChatLeavesEveryWorkspace() async throws {
         let app = app()
         app.update("cv-page") { state in
@@ -217,7 +198,7 @@ private let workspace = CGSize(width: 1000, height: 600)
     }
 
     @Test func defaultsToUserDefaults() {
-        #expect(AppStore(api: api, approvals: approvals).store is UserDefaultsStore)
+        #expect(AppStore(api: api).store is UserDefaultsStore)
     }
 }
 
