@@ -20,7 +20,10 @@
 - Rotation threshold: a pixie chat opens a fresh run after a turn that left the context at 60% or more.
 - Carry-over: the last 12 user and assistant text messages of the pixie chat, each cut to 300 characters.
 - Mascots: `sprout`, `spark`, `moth`, `mushroom`, `acorn`, `wisp`. Backgrounds: `plain`, `meadow`, `dusk`, `night`, `dawn`. Colour: `#RRGGBB`.
-- Autonomy values (stored now, used in stage 3): `observe`, `message`, `start`, `answer`; default `observe`. Repo access: `none` (default) or `read`.
+- Autonomy values (stored now, used in stage 3): `observe`, `message`, `start`, `answer`; default `observe`.
+- Project access: `edit` (default: the pixie reads and edits its projects like any chat, subject only to its permission mode and the git guard), `read` (reads its projects, writes only in its workdir) or `none` (its workdir only). The write guard runs only for `read` and `none`.
+- Skills: an empty list means every skill the user has (Claude Code's default); a non-empty list is passed as `ClaudeAgentOptions.skills`.
+- Tools: per-pixie `allowed_tools` (never prompt) and `disallowed_tools` (never available, added to the git rules) in Claude Code's permission rule syntax, such as `Bash(npm test:*)`.
 - Daemon, PWA and HarnessKit keep 100% coverage; `make check` and `make check-apple` pass after every task that touches them.
 - The Mac app and the iPhone app behave alike (D056).
 - Comments and docs follow the repo's style: short sentences, no marketing words, decision ids in parentheses.
@@ -119,7 +122,7 @@ def new(repo: str, pixie_id: str | None = None) -> NewSession:
 async def test_pixie_chats_are_kept_out_of_session_lists(db: Database, clock: FakeClock) -> None:
     await db.execute(
         "INSERT INTO pixies (id, slug, name, mascot, color, background, permission_mode,"
-        " autonomy, repo_access, skills, can_call, position, created_at, updated_at)"
+        " autonomy, project_access, skills, can_call, position, created_at, updated_at)"
         " VALUES ('p1', 'tester', 'Tester', 'sprout', '#8B7CF6', 'plain', 'default',"
         " 'observe', 'none', '[]', '[]', 0, 'x', 'x')"
     )
@@ -157,12 +160,15 @@ CREATE TABLE pixies (
     effort TEXT,
     permission_mode TEXT NOT NULL,
     autonomy TEXT NOT NULL,
-    repo_access TEXT NOT NULL,
+    project_access TEXT NOT NULL,
     -- JSON list of repo names; NULL means every project.
     projects TEXT,
-    -- JSON lists: Claude Code skill names, and ids of pixies this one may call.
+    -- JSON lists: Claude Code skill names (empty: all), ids of pixies this one may call,
+    -- and permission rules for tools that never prompt or are never available.
     skills TEXT NOT NULL,
     can_call TEXT NOT NULL,
+    allowed_tools TEXT NOT NULL DEFAULT '[]',
+    disallowed_tools TEXT NOT NULL DEFAULT '[]',
     hidden INTEGER NOT NULL DEFAULT 0,
     position INTEGER NOT NULL,
     -- The pixie's current chat; NULL until the first message or after a reset.
@@ -235,7 +241,7 @@ git commit -m "feat(daemon): add the pixies table and mark pixie chats on sessio
 **Interfaces:**
 - Consumes: `pixies` table (Task 1).
 - Produces:
-  - `Mascot`, `Background`, `Autonomy`, `RepoAccess` literals; `PixieSettings`, `CreatePixie(PixieSettings)` (+ `slug: str | None`, `soul: str`), `UpdatePixie`, `Pixie(PixieSettings)` (+ `id`, `slug`, `position`, `chat_session_id`, `created_at`, `updated_at`).
+  - `Mascot`, `Background`, `Autonomy`, `ProjectAccess` literals; `PixieSettings`, `CreatePixie(PixieSettings)` (+ `slug: str | None`, `soul: str`), `UpdatePixie`, `Pixie(PixieSettings)` (+ `id`, `slug`, `position`, `chat_session_id`, `created_at`, `updated_at`).
   - `PixieNotFoundError(NotFoundError)`, `DuplicateSlugError(ConflictError)`, `InvalidSlugError(InvalidInputError)`.
   - `slugify(name: str) -> str`, `check_slug(slug: str) -> None`, `RESERVED_SLUGS`.
   - `PixieStore(db, clock)`: `create(settings: PixieSettings, slug: str) -> Pixie`, `get(pixie_id) -> Pixie`, `list_pixies() -> list[Pixie]`, `slugs() -> set[str]`, `update(pixie_id, **changes: object) -> Pixie`, `set_chat(pixie_id, session_id: str | None) -> Pixie`, `delete(pixie_id) -> None`.
@@ -299,7 +305,8 @@ async def test_create_list_update_and_delete(db: Database, clock: FakeClock) -> 
     assert (first.position, second.position) == (0, 1)
     assert first.mascot == "sprout"
     assert first.autonomy == "observe"
-    assert first.repo_access == "none"
+    assert first.project_access == "edit"
+    assert first.allowed_tools == []
     assert first.projects == ["repo"]
     assert second.projects is None
     assert second.skills == ["review"]
@@ -353,8 +360,9 @@ type Mascot = Literal["sprout", "spark", "moth", "mushroom", "acorn", "wisp"]
 type Background = Literal["plain", "meadow", "dusk", "night", "dawn"]
 # Which harness tools a pixie gets (stage 3); every level includes the ones before it.
 type Autonomy = Literal["observe", "message", "start", "answer"]
-# Whether a pixie may read its projects' files.
-type RepoAccess = Literal["none", "read"]
+# What a pixie may do with its projects' files: edit them like any chat, only read them,
+# or neither (its workdir only).
+type ProjectAccess = Literal["edit", "read", "none"]
 
 type Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
 type Color = Annotated[str, StringConstraints(pattern=r"^#[0-9A-Fa-f]{6}$")]
@@ -374,11 +382,15 @@ class PixieSettings(BaseModel):
     effort: Effort | None = None
     permission_mode: PermissionMode = "default"
     autonomy: Autonomy = "observe"
-    repo_access: RepoAccess = "none"
+    project_access: ProjectAccess = "edit"
     # Repo names; None means every project.
     projects: list[str] | None = None
+    # Claude Code skill names; empty means every skill.
     skills: list[str] = Field(default_factory=list[str])
     can_call: list[str] = Field(default_factory=list[str])
+    # Permission rules, such as "Bash(npm test:*)": never prompt, or never available.
+    allowed_tools: list[str] = Field(default_factory=list[str])
+    disallowed_tools: list[str] = Field(default_factory=list[str])
     hidden: bool = False
 
 
@@ -403,12 +415,14 @@ class UpdatePixie(BaseModel):
     effort: Effort | None = None
     permission_mode: PermissionMode | None = None
     autonomy: Autonomy | None = None
-    repo_access: RepoAccess | None = None
+    project_access: ProjectAccess | None = None
     projects: list[str] | None = None
     # True sets `projects` back to every project.
     all_projects: bool = False
     skills: list[str] | None = None
     can_call: list[str] | None = None
+    allowed_tools: list[str] | None = None
+    disallowed_tools: list[str] | None = None
     hidden: bool | None = None
 
 
@@ -536,7 +550,7 @@ from harness.pixies.errors import DuplicateSlugError, PixieNotFoundError
 from harness.pixies.models import Pixie, PixieSettings
 from harness.storage.db import Database
 
-_JSON = ("projects", "skills", "can_call")
+_JSON = ("projects", "skills", "can_call", "allowed_tools", "disallowed_tools")
 
 
 class PixieStore:
@@ -1026,7 +1040,7 @@ git commit -m "feat(daemon): keep each pixie's soul, memory and notes in its own
 **Interfaces:**
 - Produces:
   - `ToolRefusedError(Exception)`; `AgentTool(name: str, description: str, schema: dict[str, JsonValue], handler: Callable[[dict[str, JsonValue]], Awaitable[str]])` (frozen dataclass).
-  - `SessionSpec.tools: tuple[AgentTool, ...] = ()`, `SessionSpec.write_root: Path | None = None`.
+  - `SessionSpec.tools: tuple[AgentTool, ...] = ()`, `SessionSpec.write_root: Path | None = None`, `SessionSpec.skills: tuple[str, ...] = ()`, `SessionSpec.allowed_tools: tuple[str, ...] = ()`, `SessionSpec.disallowed_tools: tuple[str, ...] = ()`.
   - `claude_tools.TOOL_SERVER = "pixie"`, `own_tool(tool_name: str) -> bool`, `to_sdk_tool(tool: AgentTool) -> SdkMcpTool[Any]`, `tool_servers(tools: tuple[AgentTool, ...]) -> dict[str, McpServerConfig]`, `write_guard(root: Path) -> HookCallback`, `WRITE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")`.
   - `build_options` passes `mcp_servers=tool_servers(spec.tools)`, allows `mcp__pixie__*` without asking, and adds a `PreToolUse` matcher with `write_guard(spec.write_root)` only when `write_root` is set.
 
@@ -1178,6 +1192,11 @@ and add to `SessionSpec`:
     tools: tuple[AgentTool, ...] = ()
     # When set, file edits outside this folder are denied, in every permission mode.
     write_root: Path | None = None
+    # Claude Code skill names for this run; empty leaves Claude Code's default (all).
+    skills: tuple[str, ...] = ()
+    # Permission rules that never prompt, and ones added to the git rules (D057).
+    allowed_tools: tuple[str, ...] = ()
+    disallowed_tools: tuple[str, ...] = ()
 ```
 
 Import `Awaitable` and `Callable` from `collections.abc` if they are not imported yet.
@@ -1289,7 +1308,9 @@ Replace the `hooks=` argument with a local list built before `ClaudeAgentOptions
         )
 ```
 
-and pass `hooks={"PreToolUse": pre_tool_use}` and `mcp_servers=tool_servers(spec.tools)`.
+and pass `hooks={"PreToolUse": pre_tool_use}`, `mcp_servers=tool_servers(spec.tools)`, `allowed_tools=list(spec.allowed_tools)`, `disallowed_tools=[*GIT_WRITE_RULES, *spec.disallowed_tools]`, and `skills=list(spec.skills) or None` (None keeps Claude Code's default of every skill).
+
+Extend `test_tools_and_the_write_root_reach_the_options` with `skills=("review",)`, `allowed_tools=("Bash(npm test:*)",)`, `disallowed_tools=("WebFetch",)` in the spec and assert `options.skills == ["review"]`, `options.allowed_tools == ["Bash(npm test:*)"]` and `options.disallowed_tools == [*GIT_WRITE_RULES, "WebFetch"]`; and in `test_no_tools_means_no_tool_server` assert `client.options.skills is None`.
 
 - [ ] **Step 6: Run the tests**
 
@@ -1583,7 +1604,7 @@ git commit -m "feat(daemon): give pixies tools for their memory, notes and soul"
 **Interfaces:**
 - Consumes: `PixieStore`, `PixieFiles`, `pixie_tools`, `EventBus.session_events`, `RepoService`, `Session.pixie_id`.
 - Produces:
-  - `sessions/extras.py`: `RunExtras(system_prompt: str, extra_dirs: tuple[Path, ...], tools: tuple[AgentTool, ...], write_root: Path | None)` (frozen dataclass), `type RunExtrasSource = Callable[[Session], Awaitable[RunExtras]]`.
+  - `sessions/extras.py`: `RunExtras(system_prompt: str, extra_dirs: tuple[Path, ...], tools: tuple[AgentTool, ...], write_root: Path | None, skills: tuple[str, ...] = (), allowed_tools: tuple[str, ...] = (), disallowed_tools: tuple[str, ...] = ())` (frozen dataclass), `type RunExtrasSource = Callable[[Session], Awaitable[RunExtras]]`.
   - `prompt.py`: `system_prompt(pixie: Pixie, soul: str, memory: str, notes: list[str], recent: str | None) -> str`, `async recent_conversation(bus: EventBus, session_id: str) -> str | None`, `RECENT_MESSAGES = 12`, `RECENT_CHARS = 300`.
   - `runtime.py`: `PixieRuntime(store, files, repos, bus, clock)` with `async extras(session: Session) -> RunExtras`.
 
@@ -1629,7 +1650,7 @@ async def test_recent_conversation_keeps_the_last_text_messages(db: Database) ->
     bus = EventBus(db, FakeClock())
     await db.execute(
         "INSERT INTO pixies (id, slug, name, mascot, color, background, permission_mode,"
-        " autonomy, repo_access, skills, can_call, position, created_at, updated_at)"
+        " autonomy, project_access, skills, can_call, position, created_at, updated_at)"
         " VALUES ('p1', 't', 'T', 'sprout', '#000000', 'plain', 'default', 'observe', 'none',"
         " '[]', '[]', 0, 'x', 'x')"
     )
@@ -1688,10 +1709,19 @@ async def test_extras_for_a_pixie_chat(tmp_path: Path, db: Database, clock: Fake
     store = PixieStore(db, clock)
     files = PixieFiles(paths.pixies_dir)
     reader = await store.create(
-        PixieSettings(name="Reader", repo_access="read", projects=["web"]), "reader"
+        PixieSettings(name="Reader", project_access="read", projects=["web"]), "reader"
     )
-    blind = await store.create(PixieSettings(name="Blind"), "blind")
-    for pixie in (reader, blind):
+    blind = await store.create(PixieSettings(name="Blind", project_access="none"), "blind")
+    editor = await store.create(
+        PixieSettings(
+            name="Editor",
+            skills=["review"],
+            allowed_tools=["Bash(npm test:*)"],
+            disallowed_tools=["WebFetch"],
+        ),
+        "editor",
+    )
+    for pixie in (reader, blind, editor):
         files.create(pixie.id, "You help.")
     sessions = SessionStore(db, clock)
     runtime = PixieRuntime(store, files, repos, EventBus(db, clock), clock)
@@ -1705,10 +1735,18 @@ async def test_extras_for_a_pixie_chat(tmp_path: Path, db: Database, clock: Fake
 
     read_extras = await runtime.extras(await sessions.create(chat(reader.id)))
     blind_extras = await runtime.extras(await sessions.create(chat(blind.id)))
+    edit_extras = await runtime.extras(await sessions.create(chat(editor.id)))
 
     assert read_extras.extra_dirs == (web.path,)
     assert blind_extras.extra_dirs == ()
+    assert len(edit_extras.extra_dirs) == 2
     assert read_extras.write_root == files.workdir(reader.id)
+    assert blind_extras.write_root == files.workdir(blind.id)
+    assert edit_extras.write_root is None
+    assert edit_extras.skills == ("review",)
+    assert edit_extras.allowed_tools == ("Bash(npm test:*)",)
+    assert edit_extras.disallowed_tools == ("WebFetch",)
+    assert read_extras.skills == ()
     assert tuple(t.name for t in read_extras.tools) == TOOL_NAMES
     assert "You are Reader (@reader)" in read_extras.system_prompt
     assert "You help." in read_extras.system_prompt
@@ -1738,7 +1776,11 @@ class RunExtras:
     system_prompt: str
     extra_dirs: tuple[Path, ...]
     tools: tuple[AgentTool, ...]
+    # None: the run may edit anywhere its permission mode allows.
     write_root: Path | None
+    skills: tuple[str, ...] = ()
+    allowed_tools: tuple[str, ...] = ()
+    disallowed_tools: tuple[str, ...] = ()
 
 
 type RunExtrasSource = Callable[[Session], Awaitable[RunExtras]]
@@ -1817,7 +1859,9 @@ async def recent_conversation(bus: EventBus, session_id: str) -> str | None:
 
 ```python
 # daemon/src/harness/pixies/runtime.py
-"""Builds a pixie chat's run: its prompt, tools, readable projects and write root (D057)."""
+"""Builds a pixie chat's run: its prompt, tools, projects, skills and permissions (D057)."""
+
+from pathlib import Path
 
 from harness.clock import Clock
 from harness.events.bus import EventBus
@@ -1858,8 +1902,8 @@ class PixieRuntime:
             self._files.notes(pid),
             await recent_conversation(self._bus, session.id),
         )
-        dirs = ()
-        if pixie.repo_access == "read":
+        dirs: tuple[Path, ...] = ()
+        if pixie.project_access != "none":
             dirs = tuple(
                 repo.path
                 for repo in self._repos.list_repos()
@@ -1869,7 +1913,11 @@ class PixieRuntime:
             system_prompt=prompt,
             extra_dirs=dirs,
             tools=pixie_tools(pixie, self._files, self._repos, self._clock),
-            write_root=self._files.workdir(pid),
+            # `edit` works like any chat; the others may write only in the workdir.
+            write_root=None if pixie.project_access == "edit" else self._files.workdir(pid),
+            skills=tuple(pixie.skills),
+            allowed_tools=tuple(pixie.allowed_tools),
+            disallowed_tools=tuple(pixie.disallowed_tools),
         )
 ```
 
@@ -1947,7 +1995,7 @@ def idle(env: Env, session_id: str, turns: int = 1) -> bool:
 async def create(env: Env) -> Session:
     await env.db.execute(
         "INSERT INTO pixies (id, slug, name, mascot, color, background, permission_mode,"
-        " autonomy, repo_access, skills, can_call, position, created_at, updated_at)"
+        " autonomy, project_access, skills, can_call, position, created_at, updated_at)"
         " VALUES ('p1', 't', 'T', 'sprout', '#000000', 'plain', 'default', 'observe', 'none',"
         " '[]', '[]', 0, 'x', 'x')"
     )
@@ -2053,6 +2101,9 @@ Replace the spec construction in `_ensure_run`:
                 ),
                 tools=extras.tools if extras else (),
                 write_root=extras.write_root if extras else None,
+                skills=extras.skills if extras else (),
+                allowed_tools=extras.allowed_tools if extras else (),
+                disallowed_tools=extras.disallowed_tools if extras else (),
             )
 ```
 
@@ -2795,7 +2846,7 @@ git commit -m "feat(daemon): add the pixie REST routes"
 export type Mascot = "sprout" | "spark" | "moth" | "mushroom" | "acorn" | "wisp";
 export type PixieBackground = "plain" | "meadow" | "dusk" | "night" | "dawn";
 export type Autonomy = "observe" | "message" | "start" | "answer";
-export type RepoAccess = "none" | "read";
+export type ProjectAccess = "edit" | "read" | "none";
 
 export interface PixieSettings {
   name: string;
@@ -2806,10 +2857,12 @@ export interface PixieSettings {
   effort: Effort | null;
   permission_mode: PermissionMode;
   autonomy: Autonomy;
-  repo_access: RepoAccess;
+  project_access: ProjectAccess;
   projects: string[] | null;
   skills: string[];
   can_call: string[];
+  allowed_tools: string[];
+  disallowed_tools: string[];
   hidden: boolean;
 }
 export interface Pixie extends PixieSettings {
@@ -2880,7 +2933,7 @@ const pixiePath = (id: string) => `/api/pixies/${encodeURIComponent(id)}`;
   }
 ```
 
-Add each to the `Api` interface. In `fakeApi.ts` add `vi.fn<Api["x"]>().mockResolvedValue(...)` for each (lists resolve `[]`, `createPixie`/`updatePixie`/`resetPixie` resolve `pixie()`, files resolve `{ text: "", hash: "h" }`, `sendToPixie` resolves `session({ pixie_id: "p1", repo: "pixie:p1" })`, `deletePixie` resolves `null`). In `fixtures.ts` add `pixie()` with the defaults from the daemon (`mascot: "sprout"`, `color: "#8B7CF6"`, `background: "plain"`, `permission_mode: "default"`, `autonomy: "observe"`, `repo_access: "none"`, `projects: null`, `skills: []`, `can_call: []`, `hidden: false`, `id: "p1"`, `slug: "tester"`, `name: "Tester"`, `position: 0`, `chat_session_id: null`, dates `"2026-10-13T09:00:00Z"`) and `pixie_id: null` in `session()`.
+Add each to the `Api` interface. In `fakeApi.ts` add `vi.fn<Api["x"]>().mockResolvedValue(...)` for each (lists resolve `[]`, `createPixie`/`updatePixie`/`resetPixie` resolve `pixie()`, files resolve `{ text: "", hash: "h" }`, `sendToPixie` resolves `session({ pixie_id: "p1", repo: "pixie:p1" })`, `deletePixie` resolves `null`). In `fixtures.ts` add `pixie()` with the defaults from the daemon (`mascot: "sprout"`, `color: "#8B7CF6"`, `background: "plain"`, `permission_mode: "default"`, `autonomy: "observe"`, `project_access: "edit"`, `projects: null`, `skills: []`, `can_call: []`, `allowed_tools: []`, `disallowed_tools: []`, `hidden: false`, `id: "p1"`, `slug: "tester"`, `name: "Tester"`, `position: 0`, `chat_session_id: null`, dates `"2026-10-13T09:00:00Z"`) and `pixie_id: null` in `session()`.
 
 - [ ] **Step 4: Run to verify it passes**
 
@@ -3058,8 +3111,8 @@ git commit -m "feat(web): keep pixies in the store and pixie chats out of projec
   - `PixieView({ id, onBack, onEdit })`: `Frame` with the mascot and name as title and tabs **Chat** and **Details**. Chat: the pixie's chat transcript (`Transcript` with `state.sessions[pixie.chat_session_id]`) or an empty state "Say hi to <name>"; a composer whose send calls `actions.sendToPixie`. Background class `pxbg-<background>`. Details renders `PixieDetails`.
   - `PixieDetails({ pixie, onEdit })`: tabs **Settings** (read-only summary rows + Edit button + Reset conversation (confirm) + Delete (confirm)), **Soul** (textarea with Save; on 409 `stale_file` it shows "Changed meanwhile" with Reload and Keep mine (re-saves with the new hash)), **Memory** (`MemoryTab`).
   - `MemoryTab({ pixie })`: the MEMORY.md text editable like Soul, a notes list (tap opens the note in the same editor), and a search field calling `searchPixie` and listing hits as `file: line`.
-  - `PixieForm({ id, onDone })`: create when `id` is null, edit otherwise. Fields: name, `@` handle (prefilled from the name until edited), mascot picker, colour swatches (8 fixed hex values), background, model and thinking (reuse the selectors the composer uses), permission mode, autonomy (segmented: Observe, Message, Start, Answer, with a one-line explanation under it), repo access (switch "Can read project files"), projects (switch "All projects" or a checklist of repos), hidden (switch), and for create only the first soul (textarea). Server 409/422 messages show inline under the handle field.
-  - Skills and "can call" are stored but not editable in stage 1; they take effect in stage 2 (`@` calls) and get their form fields with it.
+  - `PixieForm({ id, onDone })`: create when `id` is null, edit otherwise. Fields: name, `@` handle (prefilled from the name until edited), mascot picker, colour swatches (8 fixed hex values), background, model and thinking (reuse the selectors the composer uses), permission mode, autonomy (segmented: Observe, Message, Start, Answer, with a one-line explanation under it), project files (segmented: Edit, Read only, None, with a one-line explanation), skills ("All skills" switch, or chips chosen from the skill names in the slash-command catalog the app already loads, plus free text), tools that never ask and tools that are never available (chip inputs taking Claude Code permission rules such as `Bash(npm test:*)`), projects (switch "All projects" or a checklist of repos), hidden (switch), and for create only the first soul (textarea). Server 409/422 messages show inline under the handle field.
+  - "Can call" is stored but not editable in stage 1; it takes effect in stage 2 (`@` calls) and gets its form field with it.
   - `Composer` accepts `{ pixie: string }` as a third prop variant: it hides the slash/file suggestions and sends through `actions.sendToPixie`.
 
 - [ ] **Step 1: Write the failing component tests**
@@ -3120,7 +3173,7 @@ describe("Pixies section", () => {
 ```tsx
 // web/src/screens/pixies/PixieForm.test.tsx — the cases to cover:
 // 1. Typing the name "Release Manager" fills the handle "release-manager" until the handle is edited.
-// 2. Create sends { name, slug, mascot, color, background, autonomy, repo_access, projects: null, soul }.
+// 2. Create sends { name, slug, mascot, color, background, autonomy, project_access, projects: null, soul }.
 // 3. Unticking "All projects" shows the repo checklist; ticking "web" sends projects: ["web"].
 // 4. A 409 from createPixie shows its detail under the handle field and keeps the form open.
 // 5. Edit mode loads the pixie, hides the soul field and calls updatePixie with only changed fields.
@@ -3192,23 +3245,24 @@ git commit -m "feat(web): add the Pixies section, pixie page and pixie form"
 public enum Mascot: String, Codable, Sendable, CaseIterable, UnknownSafeEnum { case sprout, spark, moth, mushroom, acorn, wisp, unknown }
 public enum PixieBackground: String, Codable, Sendable, CaseIterable, UnknownSafeEnum { case plain, meadow, dusk, night, dawn, unknown }
 public enum Autonomy: String, Codable, Sendable, CaseIterable, UnknownSafeEnum { case observe, message, start, answer, unknown }
-public enum RepoAccess: String, Codable, Sendable, CaseIterable, UnknownSafeEnum { case none, read, unknown }
+public enum ProjectAccess: String, Codable, Sendable, CaseIterable, UnknownSafeEnum { case edit, read, none, unknown }
 
 public struct Pixie: Codable, Sendable, Hashable, Identifiable {
     public var id: String; public var slug: String; public var name: String
     public var mascot: Mascot; public var color: String; public var background: PixieBackground
     public var model: String?; public var effort: Effort?; public var permissionMode: PermissionMode
-    public var autonomy: Autonomy; public var repoAccess: RepoAccess; public var projects: [String]?
-    public var skills: [String]; public var canCall: [String]; public var hidden: Bool
+    public var autonomy: Autonomy; public var projectAccess: ProjectAccess; public var projects: [String]?
+    public var skills: [String]; public var canCall: [String]
+    public var allowedTools: [String]; public var disallowedTools: [String]; public var hidden: Bool
     public var position: Int; public var chatSessionID: String?
     public var createdAt: Date; public var updatedAt: Date
-    // CodingKeys map snake_case: permission_mode, repo_access, can_call, chat_session_id, created_at, updated_at
+    // CodingKeys map snake_case: permission_mode, project_access, can_call, allowed_tools, disallowed_tools, chat_session_id, created_at, updated_at
 }
 public struct PixieFile: Codable, Sendable, Hashable { public var text: String; public var hash: String }
 public struct PixieSearchHit: Codable, Sendable, Hashable { public var file: String; public var line: String }
 
 // Requests.swift
-public struct CreatePixieRequest: Encodable, Sendable { name, slug?, mascot?, color?, background?, model?, effort?, permissionMode?, autonomy?, repoAccess?, projects?, hidden?, soul? }
+public struct CreatePixieRequest: Encodable, Sendable { name, slug?, mascot?, color?, background?, model?, effort?, permissionMode?, autonomy?, projectAccess?, projects?, skills?, allowedTools?, disallowedTools?, hidden?, soul? }
 public struct UpdatePixieRequest: Encodable, Sendable { the same optionals + allProjects: Bool? (no soul) }
 public struct WritePixieFileRequest: Encodable, Sendable { text: String; hash: String? }  // hash encodes as null when nil
 ```
@@ -3248,8 +3302,9 @@ import Testing
                 EventType.pixieUpdated,
                 #"{"pixie": {"id": "p1", "slug": "tester", "name": "QA", "mascot": "sprout", "#
                     + #""color": "#8B7CF6", "background": "plain", "model": null, "effort": null, "#
-                    + #""permission_mode": "default", "autonomy": "observe", "repo_access": "none", "#
-                    + #""projects": null, "skills": [], "can_call": [], "hidden": false, "#
+                    + #""permission_mode": "default", "autonomy": "observe", "project_access": "edit", "#
+                    + #""projects": null, "skills": [], "can_call": [], "allowed_tools": [], "#
+                    + #""disallowed_tools": [], "hidden": false, "#
                     + #""position": 0, "chat_session_id": null, "#
                     + #""created_at": "2026-10-13T09:00:00Z", "updated_at": "2026-10-13T09:00:00Z"}}"#
             ))
@@ -3286,7 +3341,8 @@ import Testing
 {
   "id": "p1", "slug": "tester", "name": "Tester", "mascot": "sprout", "color": "#8B7CF6",
   "background": "plain", "model": null, "effort": null, "permission_mode": "default",
-  "autonomy": "observe", "repo_access": "none", "projects": null, "skills": [], "can_call": [],
+  "autonomy": "observe", "project_access": "edit", "projects": null, "skills": [], "can_call": [],
+  "allowed_tools": [], "disallowed_tools": [],
   "hidden": false, "position": 0, "chat_session_id": null,
   "created_at": "2026-10-13T09:00:00Z", "updated_at": "2026-10-13T09:00:00Z"
 }
@@ -3389,7 +3445,7 @@ Pixies are agents you set up once and keep: each has a name, a mascot, a colour,
 
 Each pixie has one ongoing chat. Behind it, every run starts a fresh Claude Code session with the pixie's soul, its memory, the names of its notes and the last few messages of the chat, and a turn that leaves the context 60% full makes the next one start fresh, so a long chat never piles up context. The pixie keeps what matters with its memory tools (dated facts, notes, a search across memory, notes and archive) and changes its soul only when you ask. Facts it saves have common credential formats replaced by `[redacted]` (best effort). Reset conversation archives the chat and starts a new one; soul, memory and notes stay. You can edit the soul, memory and notes yourself in the pixie's details; if the pixie changed a file since you opened it, you choose Reload or Keep mine.
 
-A pixie works in its own folder (`<data dir>/pixies/<id>/workdir`) and cannot write files anywhere else, in any permission mode. With "Can read project files" on, it can read its projects. It never commits, pushes or opens pull requests. See D057.
+Each pixie chooses what it may do with its projects' files: Edit (the default: it reads and edits them like any chat, as its permission mode allows), Read only, or None (only its own folder, `<data dir>/pixies/<id>/workdir`); Read only and None are enforced in every permission mode. It can use every skill you have or a chosen few, and lists of tools that never ask (such as `Bash(npm test:*)`) and that are never available. Edits a pixie makes in a project stay in that checkout uncommitted: its chat has no review, so you commit them yourself (stage 3 lets a pixie start reviewed chats instead). It never commits, pushes or opens pull requests. See D057.
 ```
 
 - [ ] **Step 2: Write D057**
@@ -3399,7 +3455,8 @@ A pixie works in its own folder (`<data dir>/pixies/<id>/workdir`) and cannot wr
 
 - **What:** saved agents modelled on Monocode's Monos (hardbeat920/monocode v0.8.0): a row in `pixies`, a folder with `SOUL.md`, `MEMORY.md`, `notes/`, `archive/` and `workdir/`, and one ongoing chat that is an ordinary session marked with `pixie_id` (its `repo` is `pixie:<id>`), so transcripts, search, queue and stuck detection work unchanged. Project chat lists leave pixie chats out; a pixie chat never gets a review.
 - **Fresh runs:** a pixie never resumes its Claude Code session. Each run starts with the soul, memory, note names and the last 12 user and assistant messages (300 characters each), and a turn that ends at 60% context or more makes the next turn open a new run. The earlier engine session ids stay the session's (B31). Chosen over one endless resumed session, which compacts away details and keeps old untrusted text in context.
-- **Tools:** an in-process SDK MCP server named `pixie` serves the memory, note and soul tools; harness's own tools never prompt. A `PreToolUse` hook denies Edit, Write, MultiEdit and NotebookEdit outside the pixie's workdir in every permission mode, so the soul and memory change only through the hash-checked tools or the UI.
+- **Tools:** an in-process SDK MCP server named `pixie` serves the memory, note and soul tools; harness's own tools never prompt.
+- **Power by default:** project access `edit` lets a pixie read and edit its projects like any chat (only its permission mode and the git guard limit it), because pixies are meant to do the work. `read` and `none` add a `PreToolUse` hook that denies Edit, Write, MultiEdit and NotebookEdit outside the pixie's workdir in every permission mode. Per-pixie skills go to `ClaudeAgentOptions.skills` (empty: all), and per-pixie allowed and disallowed tool rules to the run's options, the disallowed ones after the git rules. A pixie chat's edits are not reviewed; stage 3's sessions started by a pixie are.
 - **Concurrent edits:** writes name the sha256 of the text the writer read; a stale one is 409 `stale_file` with the current text and hash.
 - **Slugs:** unique, `^[a-z0-9][a-z0-9-]{0,31}$`, never a Claude Code agent's name, since stage 2 hands each pixie to Claude Code as a subagent under its slug.
 - **Clients:** the iPhone shows pixies at the top of the Projects tab; the Mac has a Pixies tab before the project tabs, because its sidebar only lists the current project's chats.

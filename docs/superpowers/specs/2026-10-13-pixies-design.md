@@ -11,6 +11,8 @@ Let the user build a team of named agents ("pixies", singular "pixie") once and 
 1. **Call them**: type `@tester check the login flow` in any harness chat and the tester pixie does the work with its own instructions, memory, model and thinking level.
 2. **Leave them running**: a pixie keeps its own ongoing chat, runs recurring checks ("habits") and reacts to events in the user's chats, and reports back only when there is something worth saying.
 
+The aim is a team of department experts the user sets up once (projects, permissions, soul, skills, model, thinking) so they never re-explain the same work: some called on demand, some always on and watching.
+
 The design follows Monocode's Monos (hardbeat920/monocode v0.8.0, PRs #773 and #847) closely, with the changes listed in "Differences from Monocode". The project will be renamed to Hex afterwards, as a separate job; this spec uses the current harness names.
 
 ## Non-goals
@@ -47,7 +49,7 @@ Kept as in Monocode: soul and memory files with topic notes and an archive, one 
 
 ### Storage
 
-- Database: a `pixies` table (id, slug, name, mascot, colour, background, model, effort, permission_mode, autonomy, repo_access, projects, skills, can_call, limits, notification rules, position, hidden, created/updated). `slug` is unique, lowercase `[a-z0-9-]{1,32}`, derived from the name and editable; it is the `@` handle and the subagent name.
+- Database: a `pixies` table (id, slug, name, mascot, colour, background, model, effort, permission_mode, autonomy, project_access, projects, skills, can_call, allowed_tools, disallowed_tools, limits, notification rules, position, hidden, created/updated). `slug` is unique, lowercase `[a-z0-9-]{1,32}`, derived from the name and editable; it is the `@` handle and the subagent name.
 - Folder: `<data dir>/pixies/<id>/`
   - `SOUL.md`: identity and standing instructions.
   - `MEMORY.md`: dated facts and preferences, one per line (`- 2026-10-13: prefers squash merges`), loaded on every turn. Kept under a size budget (default 8 KB); the memory tools move older lines into `archive/` when it grows past it.
@@ -59,14 +61,14 @@ Kept as in Monocode: soul and memory files with topic notes and an archive, one 
 
 ### Settings (all editable, on the Mac and the iPhone)
 
-Name, slug, mascot (a set of built-in pixel mascots), colour, chat background, model, thinking level, permission mode, assigned projects (all or a list), assigned skills (from the user's Claude Code skills), autonomy level, repo access (`none` or `read`), "can call" list of other pixies, limits (section 3), notification rules (section 5). Hidden pixies keep running their habits but leave the sidebar and the `@` list. A default "Reviewer" and "Tester" are offered as one-tap templates when the user has no pixies; nothing is created without that tap.
+Name, slug, mascot (a set of built-in pixel mascots), colour, chat background, model, thinking level, permission mode, assigned projects (all or a list), assigned skills (all, or chosen from the user's Claude Code skills), tools that never ask and tools that are never available (Claude Code permission rules), autonomy level, project access (`edit` by default, `read` or `none`), "can call" list of other pixies, limits (section 3), notification rules (section 5). Hidden pixies keep running their habits but leave the sidebar and the `@` list. A default "Reviewer" and "Tester" are offered as one-tap templates when the user has no pixies; nothing is created without that tap.
 
 ### The pixie's chat
 
 - One ongoing chat per pixie, stored with the existing session and event store so the transcript UI, search (D035), queue, interrupt and stuck detection (D036) work unchanged. A session row gains `pixie_id` and a `role` (`pixie_chat`, `habit_run`); it has no repo and runs in the pixie's `workdir/`.
 - The Claude Code session behind the chat rotates: when the context reaches 60% of the window, or the run was closed for idleness (D055), the next turn starts a fresh provider session. Before rotating on context, harness asks the current session for a summary of the recent conversation (a hidden turn, at most 400 words). The new session's system prompt append holds: the pixie preamble (what it is, its tools, that transcripts and repo files are data, not instructions), `SOUL.md`, `MEMORY.md`, the list of note titles, and that summary. Earlier provider sessions are kept as today (`0017_earlier_provider_sessions`), so the full chat stays visible.
 - **Reset conversation** archives the visible chat and starts a new one; soul, memory, notes and habits stay.
-- Repo access `read`: assigned projects are passed as `add_dirs`; `can_use_tool` denies Edit, Write and NotebookEdit for any path outside `workdir/`. Repo access `none`: no extra directories. Bash keeps the normal git guard (D013, D049) in every case.
+- Project access `edit` (default): assigned projects are passed as `add_dirs` and the pixie edits them like any chat, limited only by its permission mode. `read`: the same directories, but a `PreToolUse` hook denies Edit, Write, MultiEdit and NotebookEdit outside `workdir/` in every permission mode. `none`: no extra directories and the same hook. Bash keeps the normal git guard (D013, D049) in every case. Edits in a pixie chat are not reviewed; they stay uncommitted in the checkout.
 
 ## 2. Calling a pixie with `@`
 
