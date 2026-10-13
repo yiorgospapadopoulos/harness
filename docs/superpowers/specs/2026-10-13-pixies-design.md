@@ -1,5 +1,12 @@
 # Pixies: persistent agents you can call or leave watching
 
+> **Built in stage 1 (differences from this spec):**
+> - The Mac has a Pixies tab before the project tabs (Cmd-0), not a sidebar section.
+> - A pixie has project access (Edit by default, Read only, None) and per-pixie skills and tool rules; new pixies work on every project.
+> - Mascots are 10 pixel-art images from `design/mascots.toml`, with 10 preset colours plus a custom one.
+> - Reviewer and Tester templates, a per-pixie lock, reserved slugs suffixed (`@plan-2`) and the stale-file hash check were added.
+> - Not built yet: reordering, resetting Model and Thinking to Default, `@` calls, habits and the autonomy levels (stages 2 to 4). See D057.
+
 Date: 2026-10-13
 Status: design approved in conversation, awaiting spec review
 Batch: B34 (after B32/B33)
