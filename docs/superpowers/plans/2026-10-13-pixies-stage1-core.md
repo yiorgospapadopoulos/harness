@@ -19,7 +19,7 @@
 - File writes carry the content hash (sha256 hex) the writer read; a stale hash is 409 with code `stale_file`.
 - Rotation threshold: a pixie chat opens a fresh run after a turn that left the context at 60% or more.
 - Carry-over: the last 12 user and assistant text messages of the pixie chat, each cut to 300 characters.
-- Mascots: `sprout`, `spark`, `moth`, `mushroom`, `acorn`, `wisp`. Backgrounds: `plain`, `meadow`, `dusk`, `night`, `dawn`. Colour: `#RRGGBB`.
+- Mascots (pixel-art sprites, drawn from `design/mascots.toml`, Task 16): `invader`, `ghost`, `cat`, `owl`, `robot`, `frog`, `mushroom`, `bunny`, `crab`, `sprout`; default `invader`. Preset colours: `#E5484D`, `#F76B15`, `#FFC53D`, `#46A758`, `#12A594`, `#0090FF`, `#8B7CF6`, `#D6409F`, `#E2A16F`, `#8D8D8D`; default `#8B7CF6`; any other `#RRGGBB` is allowed (custom colour). Backgrounds: `plain`, `meadow`, `dusk`, `night`, `dawn`. Colour: `#RRGGBB`.
 - Autonomy values (stored now, used in stage 3): `observe`, `message`, `start`, `answer`; default `observe`.
 - Project access: `edit` (default: the pixie reads and edits its projects like any chat, subject only to its permission mode and the git guard), `read` (reads its projects, writes only in its workdir) or `none` (its workdir only). The write guard runs only for `read` and `none`.
 - Skills: an empty list means every skill the user has (Claude Code's default); a non-empty list is passed as `ClaudeAgentOptions.skills`.
@@ -73,9 +73,9 @@ Daemon (`daemon/src/harness/`):
 | `context.py` | build and expose `PixieService` |
 | `api/routes/pixies.py`, `api/app.py` | REST routes |
 
-PWA (`web/src/`): `api/types.ts`, `api/client.ts`, `test/fakeApi.ts`, `test/fixtures.ts`, `store/state.ts`, `store/reducer.ts`, `store/actions.ts`, `store/selectors.ts`, `routes.ts`, `screens/Shell.tsx`, `screens/projects/Projects.tsx`, new `screens/pixies/` (`PixieSection.tsx`, `PixieView.tsx`, `PixieDetails.tsx`, `PixieForm.tsx`, `MemoryTab.tsx`, `mascots.ts`), `styles/screens.css`.
+PWA (`web/src/`): `api/types.ts`, `api/client.ts`, `test/fakeApi.ts`, `test/fixtures.ts`, `store/state.ts`, `store/reducer.ts`, `store/actions.ts`, `store/selectors.ts`, `routes.ts`, `screens/Shell.tsx`, `screens/projects/Projects.tsx`, new `screens/pixies/` (`Sprite.tsx`, `PixieSection.tsx`, `PixieView.tsx`, `PixieDetails.tsx`, `FilePage.tsx`, `MemoryPage.tsx`), `generated/mascots.ts` (Task 16), `styles/screens.css`.
 
-Mac (`apple/`): `Sources/HarnessKit/Models/Pixie.swift`, `Models/Requests.swift`, `Models/Event.swift`, `API/HarnessAPI.swift`, `API/APIClient.swift`, `Stores/PixiesStore.swift`, `Stores/LiveSync.swift`, `Stores/SessionsStore.swift` (exclusion), `Sources/HarnessApp/Pixies/` (`PixiesView.swift`, `PixieList.swift`, `PixiePage.swift`, `PixieDetails.swift`, `PixieSheet.swift`, `Mascot.swift`), `Window/TabStrip.swift`, `Window/RootView.swift`, `Shell/Shell.swift`, `Overlays/OverlayLayer.swift`, `Debug/SampleAPI.swift`, `Debug/Snapshots.swift`, `Tests/HarnessKitTests/` (`PixiesStoreTests.swift`, `APIClientTests.swift`, `Support/FakeAPI.swift`, `Fixtures/pixie.json`).
+Mac (`apple/`): `Sources/HarnessKit/Models/Pixie.swift`, `Models/Requests.swift`, `Models/Event.swift`, `API/HarnessAPI.swift`, `API/APIClient.swift`, `Stores/PixiesStore.swift`, `Stores/LiveSync.swift`, `Stores/SessionsStore.swift` (exclusion), `Sources/HarnessApp/Pixies/` (`PixiesView.swift`, `PixieList.swift`, `PixiePage.swift`, `PixieDetails.swift`, `PixieFilePage.swift`, `PixieMemoryPage.swift`, `Sprite.swift`), `Sources/HarnessKit/Generated/Mascots.swift` (Task 16), `Window/TabStrip.swift`, `Window/RootView.swift`, `Shell/Shell.swift`, `Debug/SampleAPI.swift`, `Debug/Snapshots.swift`, `Tests/HarnessKitTests/` (`PixiesStoreTests.swift`, `APIClientTests.swift`, `Support/FakeAPI.swift`, `Fixtures/pixie.json`).
 
 Docs: `README.md` (Pixies section), `docs/decisions.md` (D057).
 
@@ -303,7 +303,7 @@ async def test_create_list_update_and_delete(db: Database, clock: FakeClock) -> 
     await store.delete(second.id)
 
     assert (first.position, second.position) == (0, 1)
-    assert first.mascot == "sprout"
+    assert first.mascot == "invader"
     assert first.autonomy == "observe"
     assert first.project_access == "edit"
     assert first.allowed_tools == []
@@ -356,7 +356,9 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from harness.config.models import Effort, PermissionMode
 
-type Mascot = Literal["sprout", "spark", "moth", "mushroom", "acorn", "wisp"]
+type Mascot = Literal[
+    "invader", "ghost", "cat", "owl", "robot", "frog", "mushroom", "bunny", "crab", "sprout"
+]
 type Background = Literal["plain", "meadow", "dusk", "night", "dawn"]
 # Which harness tools a pixie gets (stage 3); every level includes the ones before it.
 type Autonomy = Literal["observe", "message", "start", "answer"]
@@ -374,7 +376,7 @@ class PixieSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: Name
-    mascot: Mascot = "sprout"
+    mascot: Mascot = "invader"
     color: Color = "#8B7CF6"
     background: Background = "plain"
     # None: the agent defaults' model and effort.
@@ -2843,7 +2845,17 @@ git commit -m "feat(daemon): add the pixie REST routes"
 - Produces (TypeScript, snake_case like the daemon):
 
 ```ts
-export type Mascot = "sprout" | "spark" | "moth" | "mushroom" | "acorn" | "wisp";
+export type Mascot =
+  | "invader"
+  | "ghost"
+  | "cat"
+  | "owl"
+  | "robot"
+  | "frog"
+  | "mushroom"
+  | "bunny"
+  | "crab"
+  | "sprout";
 export type PixieBackground = "plain" | "meadow" | "dusk" | "night" | "dawn";
 export type Autonomy = "observe" | "message" | "start" | "answer";
 export type ProjectAccess = "edit" | "read" | "none";
@@ -2933,7 +2945,7 @@ const pixiePath = (id: string) => `/api/pixies/${encodeURIComponent(id)}`;
   }
 ```
 
-Add each to the `Api` interface. In `fakeApi.ts` add `vi.fn<Api["x"]>().mockResolvedValue(...)` for each (lists resolve `[]`, `createPixie`/`updatePixie`/`resetPixie` resolve `pixie()`, files resolve `{ text: "", hash: "h" }`, `sendToPixie` resolves `session({ pixie_id: "p1", repo: "pixie:p1" })`, `deletePixie` resolves `null`). In `fixtures.ts` add `pixie()` with the defaults from the daemon (`mascot: "sprout"`, `color: "#8B7CF6"`, `background: "plain"`, `permission_mode: "default"`, `autonomy: "observe"`, `project_access: "edit"`, `projects: null`, `skills: []`, `can_call: []`, `allowed_tools: []`, `disallowed_tools: []`, `hidden: false`, `id: "p1"`, `slug: "tester"`, `name: "Tester"`, `position: 0`, `chat_session_id: null`, dates `"2026-10-13T09:00:00Z"`) and `pixie_id: null` in `session()`.
+Add each to the `Api` interface. In `fakeApi.ts` add `vi.fn<Api["x"]>().mockResolvedValue(...)` for each (lists resolve `[]`, `createPixie`/`updatePixie`/`resetPixie` resolve `pixie()`, files resolve `{ text: "", hash: "h" }`, `sendToPixie` resolves `session({ pixie_id: "p1", repo: "pixie:p1" })`, `deletePixie` resolves `null`). In `fixtures.ts` add `pixie()` with the defaults from the daemon (`mascot: "invader"`, `color: "#8B7CF6"`, `background: "plain"`, `permission_mode: "default"`, `autonomy: "observe"`, `project_access: "edit"`, `projects: null`, `skills: []`, `can_call: []`, `allowed_tools: []`, `disallowed_tools: []`, `hidden: false`, `id: "p1"`, `slug: "tester"`, `name: "Tester"`, `position: 0`, `chat_session_id: null`, dates `"2026-10-13T09:00:00Z"`) and `pixie_id: null` in `session()`.
 
 - [ ] **Step 4: Run to verify it passes**
 
@@ -3097,22 +3109,33 @@ git commit -m "feat(web): keep pixies in the store and pixie chats out of projec
 
 ---
 
-### Task 12: PWA Pixies section, pixie page and form
+### Task 12: PWA Pixies section, pixie page and details panel
 
 **Files:**
-- Create: `web/src/screens/pixies/mascots.ts`, `PixieSection.tsx`, `PixieView.tsx`, `PixieDetails.tsx`, `MemoryTab.tsx`, `PixieForm.tsx`, and tests `PixieSection.test.tsx`, `PixieView.test.tsx`, `PixieForm.test.tsx`, `MemoryTab.test.tsx`
-- Modify: `web/src/screens/projects/Projects.tsx` (render `PixieSection` at the top of `listsView`, new prop `onOpenPixie`), `web/src/screens/Shell.tsx` (`ChatTarget` gains `{ pixie: string }` and `{ pixieForm: string | null }`), `web/src/screens/chat/ChatView.tsx` (dispatch), `web/src/routes.ts` and `routes.test.ts` (`/pixie/<id>`), `web/src/screens/chat/Composer.tsx` (pixie variant), `web/src/styles/screens.css`
+- Create: `web/src/screens/pixies/Sprite.tsx`, `PixieSection.tsx`, `PixieView.tsx`, `PixieDetails.tsx`, `FilePage.tsx`, `MemoryPage.tsx`, and tests `PixieSection.test.tsx`, `PixieView.test.tsx`, `PixieDetails.test.tsx`, `FilePage.test.tsx`, `MemoryPage.test.tsx`
+- Modify: `web/src/screens/projects/Projects.tsx` (render `PixieSection` at the top of `listsView`, new prop `onOpenPixie`), `web/src/screens/Shell.tsx` (`ChatTarget` gains `{ pixie: string }`), `web/src/screens/chat/ChatView.tsx` (dispatch), `web/src/routes.ts` and `routes.test.ts` (`/pixie/<id>`), `web/src/screens/chat/Composer.tsx` (pixie variant), `web/src/styles/screens.css`
 
 **Interfaces:**
-- Consumes: store actions and `pixieList` (Task 11); `Frame`, `Transcript`, `Composer`, `Sheet`, `.srow`, `.sw`, `.pg-h`, `.lgrp`, `.lrow`, `.row`.
+- Consumes: store actions and `pixieList` (Task 11); `MASCOT_SPRITES`, `PIXIE_COLORS` from `web/src/generated/mascots.ts` (Task 16); `Frame`, `Transcript`, `Composer`, `Sheet`, `.srow`, `.sw`, `.pg-h`, `.lgrp`, `.lrow`, `.row`.
 - Produces:
-  - `MASCOTS: Record<Mascot, string>` (emoji stand-ins until pixel art lands: sprout 🌱, spark ✨, moth 🦋, mushroom 🍄, acorn 🌰, wisp 💫) and `BACKGROUNDS: PixieBackground[]`.
-  - `PixieSection({ onOpen, onNew })`: heading "Pixies" with count, one `.lrow` per visible pixie (mascot, name, `@slug`, a dot coloured with `pixie.color`, a running indicator when its chat session state is `running`), a "New pixie" row. With no pixies it shows two template buttons, "Reviewer" and "Tester", that call `createPixie` with a starter soul; nothing is created without a tap.
-  - `PixieView({ id, onBack, onEdit })`: `Frame` with the mascot and name as title and tabs **Chat** and **Details**. Chat: the pixie's chat transcript (`Transcript` with `state.sessions[pixie.chat_session_id]`) or an empty state "Say hi to <name>"; a composer whose send calls `actions.sendToPixie`. Background class `pxbg-<background>`. Details renders `PixieDetails`.
-  - `PixieDetails({ pixie, onEdit })`: tabs **Settings** (read-only summary rows + Edit button + Reset conversation (confirm) + Delete (confirm)), **Soul** (textarea with Save; on 409 `stale_file` it shows "Changed meanwhile" with Reload and Keep mine (re-saves with the new hash)), **Memory** (`MemoryTab`).
-  - `MemoryTab({ pixie })`: the MEMORY.md text editable like Soul, a notes list (tap opens the note in the same editor), and a search field calling `searchPixie` and listing hits as `file: line`.
-  - `PixieForm({ id, onDone })`: create when `id` is null, edit otherwise. Fields: name, `@` handle (prefilled from the name until edited), mascot picker, colour swatches (8 fixed hex values), background, model and thinking (reuse the selectors the composer uses), permission mode, autonomy (segmented: Observe, Message, Start, Answer, with a one-line explanation under it), project files (segmented: Edit, Read only, None, with a one-line explanation), skills ("All skills" switch, or chips chosen from the skill names in the slash-command catalog the app already loads, plus free text), tools that never ask and tools that are never available (chip inputs taking Claude Code permission rules such as `Bash(npm test:*)`), projects (switch "All projects" or a checklist of repos), hidden (switch), and for create only the first soul (textarea). Server 409/422 messages show inline under the handle field.
-  - "Can call" is stored but not editable in stage 1; it takes effect in stage 2 (`@` calls) and gets its form field with it.
+  - `Sprite({ mascot, color, size })`: draws the mascot's pixel grid as an SVG of `<rect>`s filled with `color` (one rect per `#` cell, `shape-rendering="crispEdges"`), with `role="img"` and `aria-label` = the mascot name.
+  - `PixieSection({ onOpen })`: heading "Pixies" with count, one `.lrow` per visible pixie (sprite, name, `@slug`, a running indicator when its chat session state is `running`), and a **New pixie** row. New pixie calls `createPixie({ name: "New pixie" })` and opens the new pixie on its Details tab, so the user sets everything up in place (as in Monocode). With no pixies it also shows **Reviewer** and **Tester** template buttons that create a pixie with a starter soul; nothing is created without a tap.
+  - `PixieView({ id, onBack, tab? })`: `Frame` with the sprite and name as title and tabs **Chat** and **Details**. Chat: the pixie's chat transcript (`Transcript` with `state.sessions[pixie.chat_session_id]`) or an empty state "Say hi to <name>" with the big sprite; a composer whose send calls `actions.sendToPixie`. Background class `pxbg-<background>`. Details renders `PixieDetails`.
+  - `PixieDetails({ pixie })` — one scrolling panel laid out like Monocode's Details panel, every change saved at once with `updatePixie` (no separate form or Save button):
+    1. a large sprite (96px) and the name below it; tapping the name edits it inline (Enter or blur saves); the `@slug` under it, also editable inline, with server 409/422 messages shown under it;
+    2. a row of mascot buttons (each a 32px sprite in the current colour, `aria-pressed` on the chosen one);
+    3. a row of colour dots: the 10 preset colours plus a rainbow "custom" dot that opens `<input type="color">`; `aria-pressed` on the chosen one;
+    4. a background picker (5 small swatches);
+    5. settings rows (label left, value right, tap opens a picker sheet): **Model** and **Thinking** (reuse the composer's model and thinking selectors and their rules), **Permissions** (permission mode), **Project files** (Edit, Read only, None, each with a one-line explanation), **Autonomy** (Observe, Message, Start, Answer, with a one-line explanation; stored now, used in stage 3);
+    6. **Projects**: the assigned projects listed (or "All projects"), each removable, and **+ Add project** opening a picker of registered repos plus an "All projects" choice;
+    7. **Skills**: "All skills" or the chosen ones as chips, **+ Add skill** picking from the skill names in the slash-command catalog the app already loads, plus free text;
+    8. **Tools**: two chip lists, "Never ask for" and "Never allow", each taking Claude Code permission rules such as `Bash(npm test:*)`;
+    9. drill-in rows with a title, a one-line description and a chevron: **Soul** ("Who this pixie is and the rules it follows", opens `FilePage` on `soul`), **Habits** ("Recurring tasks this pixie runs on its own", shows "Coming soon" in stage 1, count 0), **Memory** ("Facts and preferences this pixie remembers", shows the fact count, opens `MemoryPage`);
+    10. **Hidden** switch;
+    11. at the bottom, a red **Reset conversation** ("Clear all messages and start fresh", confirm) and **Delete pixie** (confirm, then back).
+  - `FilePage({ pixie, name, title })`: a full-height textarea with Save; on 409 `stale_file` it shows "Changed meanwhile" with **Reload** (take theirs) and **Keep mine** (save again on the returned hash).
+  - `MemoryPage({ pixie })`: the facts of MEMORY.md as a list (each removable: saves MEMORY.md without that line on its hash), **Add fact** (appends `- YYYY-MM-DD: <text>` and saves), the notes list (tap opens `FilePage` on `notes/<name>`), and a search field calling `searchPixie` listing hits as `file: line`.
+  - "Can call" is stored but not shown in stage 1; it gets its row with stage 2 (`@` calls).
   - `Composer` accepts `{ pixie: string }` as a third prop variant: it hides the slash/file suggestions and sends through `actions.sendToPixie`.
 
 - [ ] **Step 1: Write the failing component tests**
@@ -3149,37 +3172,28 @@ describe("Pixies section", () => {
     await user.click(screen.getByRole("button", { name: "Reviewer" }));
     expect(api.createPixie).toHaveBeenCalledWith(expect.objectContaining({ name: "Reviewer" }));
   });
+
+  it("New pixie creates one and opens its details", async () => {
+    const api = fakeApi();
+    api.createPixie.mockResolvedValue(pixie({ id: "p9", name: "New pixie", slug: "new-pixie" }));
+    const { user } = await renderApp({ api });
+    await user.click(screen.getByRole("tab", { name: "Projects" }));
+    await user.click(screen.getByRole("button", { name: "New pixie" }));
+
+    expect(api.createPixie).toHaveBeenCalledWith({ name: "New pixie" });
+    expect(screen.getByRole("tab", { name: "Details", selected: true })).toBeInTheDocument();
+  });
 });
 ```
 
-```tsx
-// web/src/screens/pixies/PixieView.test.tsx — the cases to cover:
-// 1. With no chat yet: "Say hi to Tester"; typing "hello" and Send calls api.sendToPixie("p1", "hello").
-// 2. With chat_session_id set: the transcript of that session renders (seed its events via api.sessionEvents).
-// 3. The background class pxbg-dusk is on the page for background "dusk".
-// 4. Details > Settings > Reset conversation asks to confirm, then calls api.resetPixie("p1").
-// 5. Details > Settings > Delete asks to confirm, then calls api.deletePixie("p1") and goes back.
-```
+The other test files cover, each case as a full `it(...)` in the style above (using `renderApp`, `fakeApi` mocks and `user` events):
 
-```tsx
-// web/src/screens/pixies/MemoryTab.test.tsx — the cases to cover:
-// 1. Soul tab shows the file text; Save calls savePixieFile("p1", "soul", text, hash).
-// 2. A 409 ApiError with code "stale_file" shows "Changed meanwhile"; Keep mine re-reads the file
-//    and saves again with the new hash; Reload replaces the text with the current one.
-// 3. Memory notes list from pixieNotes; tapping "release" loads pixieFile("p1", "notes/release").
-// 4. Search "pnpm" calls searchPixie and lists "notes/tooling.md: pnpm workspaces".
-```
+- `PixieView.test.tsx`: (1) with no chat, "Say hi to Tester"; typing "hello" and Send calls `api.sendToPixie("p1", "hello")`; (2) with `chat_session_id` set, that session's transcript renders (seed its events through the fake API's session events method); (3) the page has class `pxbg-dusk` for background `"dusk"`.
+- `PixieDetails.test.tsx`: (1) clicking the mascot button `"ghost"` calls `updatePixie("p1", { mascot: "ghost" })`; (2) a colour dot calls `updatePixie` with that colour, and the custom colour input with its value; (3) renaming inline and pressing Enter calls `updatePixie("p1", { name })`; a 409 on the slug shows its detail under it; (4) **+ Add project** → "web" calls `updatePixie("p1", { projects: ["web"] })`, and "All projects" calls it with `{ all_projects: true }`; (5) Project files → Read only calls `updatePixie("p1", { project_access: "read" })`; (6) adding the rule `Bash(npm test:*)` to "Never ask for" calls `updatePixie("p1", { allowed_tools: ["Bash(npm test:*)"] })`; (7) Soul row opens the soul page; Memory row shows the fact count; Habits row says "Coming soon"; (8) Reset conversation asks to confirm, then calls `api.resetPixie("p1")`; Delete pixie confirms, calls `api.deletePixie("p1")` and goes back.
+- `FilePage.test.tsx`: (1) shows the file text; Save calls `savePixieFile("p1", "soul", text, hash)`; (2) a 409 `ApiError` with code `stale_file` shows "Changed meanwhile"; **Keep mine** saves again with the hash from the error body; **Reload** replaces the text with the current one.
+- `MemoryPage.test.tsx`: (1) lists facts from MEMORY.md; removing one saves MEMORY.md without that line; (2) Add fact appends a dated line and saves; (3) the notes list comes from `pixieNotes`; tapping "release" opens `notes/release`; (4) searching "pnpm" calls `searchPixie` and lists `notes/tooling.md: pnpm workspaces`.
 
-```tsx
-// web/src/screens/pixies/PixieForm.test.tsx — the cases to cover:
-// 1. Typing the name "Release Manager" fills the handle "release-manager" until the handle is edited.
-// 2. Create sends { name, slug, mascot, color, background, autonomy, project_access, projects: null, soul }.
-// 3. Unticking "All projects" shows the repo checklist; ticking "web" sends projects: ["web"].
-// 4. A 409 from createPixie shows its detail under the handle field and keeps the form open.
-// 5. Edit mode loads the pixie, hides the soul field and calls updatePixie with only changed fields.
-```
-
-Write each listed case as a full `it(...)` in the file's style (as `PixieSection.test.tsx` above), using `renderApp`, `fakeApi` mocks and `user` events. Every branch in the new files must be covered; the gate is 100%.
+Every branch in the new files must be covered; the gate is 100%.
 
 - [ ] **Step 2: Run to verify they fail**
 
@@ -3191,7 +3205,7 @@ Expected: FAIL (modules not found)
 Implement the components listed under **Produces**, following these existing patterns (read each before writing):
 - list markup and gestures: `screens/projects/ChatRow.tsx`, `.pg-h`, `.lgrp gl`, `.lrow`, `.row`;
 - pushed page with title, back and tabs: `screens/chat/Frame.tsx`, `screens/chat/ChatView.tsx` (`SessionChat`);
-- settings rows and switches: the Account tab (`screens/account/*`), `.srow gl`, `.sw` with `role="switch"`;
+- settings rows, pickers and switches: the Account tab (`screens/account/*`), `.srow gl`, `.sw` with `role="switch"`;
 - confirm dialogs and sheets: `ui/Sheet.tsx` and how Reject asks first in `screens/approvals`;
 - 409 handling: `ApiError` (`status`, `code`) from `api/client.ts`.
 
@@ -3201,22 +3215,22 @@ Starter souls for the templates (`PixieSection.tsx`):
 const TEMPLATES = [
   {
     name: "Reviewer",
-    mascot: "moth",
+    mascot: "owl",
     soul: "You review code changes. Look for bugs, missing tests and unclear names first, " +
       "style last. Say what you checked, then list problems by severity with file and line.",
   },
   {
     name: "Tester",
-    mascot: "mushroom",
+    mascot: "robot",
     soul: "You test changes. Find how the project runs its tests, run them, add missing " +
       "cases for the change, and report what passed, what failed and why.",
   },
 ] as const;
 ```
 
-Add CSS to `styles/screens.css` using the short aliases from `base.css`: `.pxrow .pxm` (mascot, 22px), `.pxdot` (8px circle with `background: var(--px)` set inline as `style={{ "--px": pixie.color }}`), `.pxbg-plain` (no image), `.pxbg-meadow`, `.pxbg-dusk`, `.pxbg-night`, `.pxbg-dawn` (soft two-stop `linear-gradient`s drawn from token colours, low opacity so text keeps contrast in both themes), `.pxsw` (colour swatch buttons, 32px, `aria-pressed`). Keep tap targets at least 44px (`styles/tapTargets.test.tsx` checks them).
+Add CSS to `styles/screens.css` using the short aliases from `base.css`: `.pxd` (the details panel: centred sprite and name, then rows), `.pxpick` (mascot and colour rows: wrap, 8px gap), `.pxdot` (24px circle, `background: var(--px)` set inline as `style={{ "--px": colour }}`, a ring when `aria-pressed="true"`), `.pxcustom` (the rainbow dot: `conic-gradient` of hues), `.pxrow-d` (drill-in row with description in `--t3` and a chevron), `.pxdanger` (red text for Reset and Delete), `.pxbg-plain` (no image), `.pxbg-meadow`, `.pxbg-dusk`, `.pxbg-night`, `.pxbg-dawn` (soft two-stop `linear-gradient`s from token colours, low opacity so text keeps contrast in both themes). Keep tap targets at least 44px (`styles/tapTargets.test.tsx` checks them).
 
-Wire Shell: `{ pixie: id }` renders `PixieView`, `{ pixieForm: id | null }` renders `PixieForm`; `chatKey`/`chatId` handle both; `routes.ts` parses and prints `/pixie/<id>`; add a `routes.test.ts` case for it.
+Wire Shell: `{ pixie: id }` renders `PixieView`; `chatKey`/`chatId` handle it; `routes.ts` parses and prints `/pixie/<id>`; add a `routes.test.ts` case for it.
 
 - [ ] **Step 4: Run the web gate**
 
@@ -3227,7 +3241,7 @@ Expected: PASS (format, lint, typecheck, 100% coverage, build, audit)
 
 ```bash
 git add web/src
-git commit -m "feat(web): add the Pixies section, pixie page and pixie form"
+git commit -m "feat(web): add the Pixies section, pixie page and details panel"
 ```
 
 ---
@@ -3242,7 +3256,7 @@ git commit -m "feat(web): add the Pixies section, pixie page and pixie form"
 - Produces:
 
 ```swift
-public enum Mascot: String, Codable, Sendable, CaseIterable, UnknownSafeEnum { case sprout, spark, moth, mushroom, acorn, wisp, unknown }
+public enum Mascot: String, Codable, Sendable, CaseIterable, UnknownSafeEnum { case invader, ghost, cat, owl, robot, frog, mushroom, bunny, crab, sprout, unknown }
 public enum PixieBackground: String, Codable, Sendable, CaseIterable, UnknownSafeEnum { case plain, meadow, dusk, night, dawn, unknown }
 public enum Autonomy: String, Codable, Sendable, CaseIterable, UnknownSafeEnum { case observe, message, start, answer, unknown }
 public enum ProjectAccess: String, Codable, Sendable, CaseIterable, UnknownSafeEnum { case edit, read, none, unknown }
@@ -3357,7 +3371,7 @@ Expected: FAIL (types not found)
 
 - [ ] **Step 3: Implement**
 
-Write the models, requests, API methods (in `APIClient` under a `// MARK: Pixies` section, with `call`/`perform`/`get` as the neighbours do; the file name path is `["pixies", id, "files"] + name.split(separator: "/").map(String.init)`), events, `APIError.staleFile`, `PixiesStore` (copy `ConnectorsStore`'s shape; `apply` upserts or removes and re-sorts by `position`), add it to `AppModel`, `LiveSync` (`init`, `refresh()`, `route()`), and implement every new method in `FakeAPI` (recording calls, with `state.pixies`, `state.staleFile`) and in `SampleAPI` (two sample pixies, "Reviewer" moth/dusk and "Watcher" wisp/night, with a soul, a few memory facts and one note; writes change only memory). Exclude `pixieID != nil` sessions where a project's chats are listed.
+Write the models, requests, API methods (in `APIClient` under a `// MARK: Pixies` section, with `call`/`perform`/`get` as the neighbours do; the file name path is `["pixies", id, "files"] + name.split(separator: "/").map(String.init)`), events, `APIError.staleFile`, `PixiesStore` (copy `ConnectorsStore`'s shape; `apply` upserts or removes and re-sorts by `position`), add it to `AppModel`, `LiveSync` (`init`, `refresh()`, `route()`), and implement every new method in `FakeAPI` (recording calls, with `state.pixies`, `state.staleFile`) and in `SampleAPI` (two sample pixies, "Reviewer" owl/dusk and "Watcher" ghost/night, with a soul, a few memory facts and one note; writes change only memory). Exclude `pixieID != nil` sessions where a project's chats are listed.
 
 - [ ] **Step 4: Run the Apple gate**
 
@@ -3373,28 +3387,29 @@ git commit -m "feat(apple): add pixie models, API calls and the pixies store"
 
 ---
 
-### Task 14: Mac Pixies tab, pixie page and sheet
+### Task 14: Mac Pixies tab, pixie page and details panel
 
 **Files:**
-- Create: `apple/Sources/HarnessApp/Pixies/PixiesView.swift`, `PixieList.swift`, `PixiePage.swift`, `PixieDetails.swift`, `PixieSheet.swift`, `Mascot.swift`
-- Modify: `apple/Sources/HarnessApp/Window/TabStrip.swift`, `Window/RootView.swift`, `Shell/Shell.swift`, `Overlays/OverlayLayer.swift`, `Chat/Composer.swift`, `Debug/Snapshots.swift`
+- Create: `apple/Sources/HarnessApp/Pixies/PixiesView.swift`, `PixieList.swift`, `PixiePage.swift`, `PixieDetails.swift`, `PixieFilePage.swift`, `PixieMemoryPage.swift`, `Sprite.swift`
+- Modify: `apple/Sources/HarnessApp/Window/TabStrip.swift`, `Window/RootView.swift`, `Shell/Shell.swift`, `Chat/Composer.swift`, `Debug/Snapshots.swift`
 
 **Interfaces:**
-- Consumes: `PixiesStore` (Task 13), `TranscriptView(chat:)`, `Composer`, `SheetFrame`, `SheetSection`, `SheetRow`, `Segmented`, `Overlay`.
+- Consumes: `PixiesStore` (Task 13), `MascotSprites` and `PixieColors` from `HarnessKit/Generated/Mascots.swift` (Task 16), `TranscriptView(chat:)`, `Composer`, `SheetSection`, `SheetRow`, `Segmented`.
 - Produces:
   - `Shell.pixiesOpen: Bool` and `Shell.pixie: String?` (the selected pixie); `Shell.openPixies()`, `Shell.selectPixie(_:)`; `var pixies: PixiesStore { model.pixies }`.
-  - A leftmost **Pixies** tab in `TabStrip` (sparkle symbol, label "Pixies", unread count later); selecting it sets `pixiesOpen` and `ProjectBody` shows `PixiesView` instead of the project body. Cmd-0 selects it (Cmd-1 to Cmd-9 stay projects).
-  - `PixiesView`: `HStack { PixieList(); PixiePage() or an empty "Create your first pixie" view with Reviewer and Tester templates }`.
-  - `PixieList`: rows with mascot, name, `@slug`, colour dot, a glow while its chat runs; a New pixie button; drag to reorder updates `position` through `update`.
-  - `PixiePage`: header (mascot, name, `@slug`, Edit, More menu with Reset conversation and Delete, both confirmed); the chat (`TranscriptView(chat:)` for `chatSessionID`, or "Say hi to <name>") over the pixie background, a `Composer` in pixie mode (no slash/file completions; sends through `pixies.send`); a toggleable details panel on the right with tabs Settings, Soul, Memory (same behaviour as the PWA, including the stale-file choice: Reload or Keep mine).
-  - `Overlay.pixie(String?)`: `PixieSheet` for create (nil) and edit, with the same fields as the PWA form.
-  - `Mascot.swift`: `MascotView(mascot:size:)` drawing the same emoji stand-ins as the PWA, and `PixieBackgroundView(background:)` with the five gradients, built from `DesignTokens` colours.
+  - A leftmost **Pixies** tab in `TabStrip` (label "Pixies"); selecting it sets `pixiesOpen` and `ProjectBody` shows `PixiesView` instead of the project body, also when no project is open. Cmd-0 selects it (Cmd-1 to Cmd-9 stay projects).
+  - `SpriteView(mascot:color:size:)`: draws the mascot's pixel grid with a `Canvas`, one filled square per `#` cell, no antialiasing.
+  - `PixiesView`: `HStack { PixieList(); PixiePage() }`, or, with no pixies, an empty view "Create your first pixie" with **New pixie**, **Reviewer** and **Tester** (same starter souls as the PWA).
+  - `PixieList`: rows with sprite, name, `@slug`, a glow while its chat runs; **New pixie** creates `{ name: "New pixie" }`, selects it and opens its details panel; drag to reorder updates `position` through `update`.
+  - `PixiePage`: the chat (`TranscriptView(chat:)` for `chatSessionID`, or "Say hi to <name>" with the big sprite) over the pixie background, a `Composer` in pixie mode (no slash/file completions; sends through `pixies.send`), and a **Details** panel on the right (toggle button in the header, open by default for a new pixie, 320pt wide).
+  - `PixieDetails`: the same panel as the PWA's `PixieDetails` and as Monocode's (see the user's reference): large sprite and inline-editable name and `@slug` at the top; mascot row; colour dots (10 presets plus a rainbow custom dot opening a `ColorPicker`); background swatches; rows Model, Thinking, Permissions, Project files, Autonomy as menu pickers; **Projects** list with **+ Add project**; **Skills** chips with **+ Add skill**; **Tools** "Never ask for" and "Never allow" chip lists; drill-in rows **Soul**, **Habits** ("Coming soon", count 0) and **Memory** (fact count) with a description line and a chevron, opening `PixieFilePage` and `PixieMemoryPage` inside the panel with a back button; **Hidden** toggle; red **Reset conversation** ("Clear all messages and start fresh") and **Delete pixie** at the bottom, both confirmed. Every change saves at once through `pixies.update`.
+  - `PixieFilePage` and `PixieMemoryPage`: as the PWA's `FilePage` and `MemoryPage`, including the stale-file choice (Reload or Keep mine).
   - `Composer` gets a pixie mode: `Composer(pixie: String)` or an enum target, guarding the project-dependent code.
-  - Snapshots section `"b34"`: `renderPixies` writes `pixies-list`, `pixie-chat`, `pixie-details-soul`, `pixie-details-memory` and `pixie-sheet` in light and dark.
+  - Snapshots section `"b34"`: `renderPixies` writes `pixies-empty`, `pixie-chat`, `pixie-details`, `pixie-details-soul` and `pixie-details-memory` in light and dark.
 
 - [ ] **Step 1: Add the snapshot section first (the visual test)**
 
-In `Debug/Snapshots.swift` add the `"b34"` section key and a `renderPixies(model, shell, controller, folder)` that opens the Pixies tab, selects the sample "Reviewer", snaps the chat, opens details on Soul and Memory and snaps each, then shows `.pixie(nil)` and snaps the sheet, in `.aqua` and `.darkAqua`, as the `b29` section does.
+In `Debug/Snapshots.swift` add the `"b34"` section key and a `renderPixies(model, shell, controller, folder)` that snaps the empty Pixies tab (with sample pixies removed for that shot), then selects the sample "Reviewer", snaps the chat with details closed, opens details and snaps it, opens Soul and Memory and snaps each, in `.aqua` and `.darkAqua`, as the `b29` section does.
 
 - [ ] **Step 2: Run it to verify it fails**
 
@@ -3405,17 +3420,16 @@ Expected: build FAIL (`PixiesView` and the rest not found)
 
 Implement the views listed under **Produces**, following:
 - tab look and selection: `Window/TabStrip.swift` (add the Pixies tab before the project tabs, same height and hover/pointer behaviour);
-- body switch: `Window/RootView.swift` `ProjectBody` (show `PixiesView` when `shell.pixiesOpen`, also when no project is open so the Pixies tab works with zero projects);
+- body switch: `Window/RootView.swift` `ProjectBody`;
 - rows and glow: `Sidebar/ChatRow.swift`;
-- details tabs and rows: `Activity/RightPanel` and `Overlays/SettingsSheet.swift` (`SheetSection`, `SheetRow`, `Segmented`);
-- overlays: add `case pixie(String?)` to `Overlay` and a branch in `OverlayLayer.sheet(_:)`.
+- the right-hand panel and its rows: `Activity/RightPanel` and `Overlays/SettingsSheet.swift` (`SheetSection`, `SheetRow`, `Segmented`).
 
-Keyboard: Cmd-0 opens Pixies; Esc closes the sheet as other sheets do. Pointer: pointing hand on rows, tabs and buttons (as the README describes for the rest of the app).
+Keyboard: Cmd-0 opens Pixies. Pointer: pointing hand on rows, tabs, dots and buttons (as the README describes for the rest of the app).
 
 - [ ] **Step 4: Render and look at the snapshots**
 
 Run: `cd apple && swift build && "$(swift build --show-bin-path)/HarnessApp" --render-snapshots /tmp/pixies-snaps b34`
-Expected: 10 PNGs in `/tmp/pixies-snaps`. Open each and check: text legible on every background in both themes, the Pixies tab aligned with project tabs, no clipped labels in the sheet at its default width.
+Expected: 10 PNGs in `/tmp/pixies-snaps`. Open each and check: crisp pixel sprites, text legible on every background in both themes, the Pixies tab aligned with project tabs, the details panel matching the layout above with no clipped labels.
 
 - [ ] **Step 5: Run the Apple gate**
 
@@ -3426,7 +3440,7 @@ Expected: PASS
 
 ```bash
 git add apple
-git commit -m "feat(apple): add the Pixies tab, pixie page and pixie sheet"
+git commit -m "feat(apple): add the Pixies tab, pixie page and details panel"
 ```
 
 ---
@@ -3477,8 +3491,114 @@ git commit -m "docs: describe pixies and record D057"
 
 ---
 
+### Task 16: Pixel mascots and pixie colours in the design pipeline
+
+Run this task after Task 9 and before Task 10 (the clients consume its generated files).
+
+**Files:**
+- Create: `design/mascots.toml`, `daemon/src/harness/design/mascots.py`, `daemon/tests/test_design_mascots.py`
+- Modify: the `harness design generate` command (in `daemon/src/harness/design/` and its CLI entry; read `design/__init__.py`, `loader.py`, `css.py`, `swift.py` and the CLI first) so it also writes `web/src/generated/mascots.ts` and `apple/Sources/HarnessKit/Generated/Mascots.swift`; `Makefile` `tokens` target if it lists outputs.
+
+**Interfaces:**
+- Produces:
+  - `design/mascots.toml`:
+    ```toml
+    # Pixel-art pixie mascots (D057): 12 columns by 10 rows, "#" filled, "." empty.
+    colors = [<the 10 preset colours from Global Constraints, in that order>]
+
+    [mascots.invader]
+    rows = [
+      "...#....#...",
+      "....#..#....",
+      "...######...",
+      "..##.##.##..",
+      ".##########.",
+      ".#.######.#.",
+      ".#.#....#.#.",
+      "....##.##...",
+      "............",
+      "............",
+    ]
+    # ... one table per mascot in Global Constraints order
+    ```
+    Draw all 10 mascots (`invader`, `ghost`, `cat`, `owl`, `robot`, `frog`, `mushroom`, `bunny`, `crab`, `sprout`) yourself: 12x10, recognisable at 22px, roughly centred, each using at least 30 filled cells. Monocode's are small retro pixel creatures; match that feel.
+  - `mascots.py`: `load_mascots(path: Path) -> Mascots` (validates: exactly the 10 names, every grid 10 rows of 12 characters of `#`/`.`, colours `#RRGGBB`; raises `ValueError` naming the mascot and row otherwise), `render_ts(m: Mascots) -> str`, `render_swift(m: Mascots) -> str`.
+  - `web/src/generated/mascots.ts`: `export const MASCOT_SPRITES: Record<Mascot, readonly string[]>` and `export const PIXIE_COLORS: readonly string[]`, with the generated-file header the CSS output uses; `Mascot` imported as a type from `../api/types` (Task 10 defines it; until then declare the same union locally in the generated file and switch it to the import in Task 10).
+  - `apple/Sources/HarnessKit/Generated/Mascots.swift`: `public enum MascotSprites { public static let rows: [String: [String]] }` and `public enum PixieColors { public static let presets: [String] }`, with the Swift generated-file header the tokens output uses. Coverage excludes `Generated/` already.
+
+- [ ] **Step 1: Write the failing tests**
+
+```python
+# daemon/tests/test_design_mascots.py
+from pathlib import Path
+
+import pytest
+
+from harness.design.mascots import load_mascots, render_swift, render_ts
+
+ROOT = Path(__file__).resolve().parents[2]
+NAMES = ["invader", "ghost", "cat", "owl", "robot", "frog", "mushroom", "bunny", "crab", "sprout"]
+
+
+def test_the_shipped_file_has_ten_valid_mascots() -> None:
+    mascots = load_mascots(ROOT / "design" / "mascots.toml")
+
+    assert list(mascots.sprites) == NAMES
+    assert len(mascots.colors) == 10
+    for rows in mascots.sprites.values():
+        assert len(rows) == 10
+        assert all(len(row) == 12 and set(row) <= {"#", "."} for row in rows)
+        assert sum(row.count("#") for row in rows) >= 30
+
+
+def test_bad_grids_are_refused(tmp_path: Path) -> None:
+    path = tmp_path / "m.toml"
+    path.write_text('colors = ["#000000"]\n[mascots.invader]\nrows = ["#"]\n')
+
+    with pytest.raises(ValueError, match="invader"):
+        load_mascots(path)
+
+
+def test_outputs_are_generated() -> None:
+    mascots = load_mascots(ROOT / "design" / "mascots.toml")
+
+    ts = render_ts(mascots)
+    swift = render_swift(mascots)
+
+    assert "export const MASCOT_SPRITES" in ts
+    assert '"invader": [' in ts or "invader: [" in ts
+    assert "public enum MascotSprites" in swift
+    assert '"#8B7CF6"' in ts and '"#8B7CF6"' in swift
+```
+
+Add a test like the existing `test_design_cli.py` ones that `harness design generate` writes both new files and that a second run leaves them unchanged.
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `cd daemon && uv run pytest tests/test_design_mascots.py -v`
+Expected: FAIL (`ModuleNotFoundError: No module named 'harness.design.mascots'`)
+
+- [ ] **Step 3: Implement, draw the sprites and generate**
+
+Write `mascots.py` following `loader.py`/`css.py`/`swift.py`, wire it into the generate command, draw the sprites, then run `make tokens` (or `cd daemon && uv run harness design generate`) and commit the generated files.
+
+- [ ] **Step 4: Run the daemon gate**
+
+Run: `make check` (daemon part) — 100% coverage.
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add design/mascots.toml daemon/src/harness/design daemon/tests web/src/generated/mascots.ts apple/Sources/HarnessKit/Generated/Mascots.swift Makefile
+git commit -m "feat(design): add pixel-art pixie mascots and colours to the design pipeline"
+```
+
+---
+
 ## Execution notes
 
+- Order: Tasks 1 to 9, then 16, then 10 to 15.
 - Before Task 1, bring the worktree up to date with `main` (the app's sync tool, not `git merge` by hand) so B32/B33 are included, then re-check the migration and decision numbers.
 - Tasks 1 to 9 are daemon-only and can be reviewed and merged as a unit if the client work needs to wait. Tasks 10 to 12 (PWA) and 13 to 14 (Mac) depend only on Task 9's API and can run in parallel with each other.
 - Never push. Merging back to `main` happens only after the user approves.
