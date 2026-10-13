@@ -5,6 +5,7 @@ import {
   check,
   event,
   claudeChat,
+  pixie,
   mergeApproval,
   plan,
   prStatus,
@@ -25,6 +26,7 @@ import {
   needsCount,
   nudgeText,
   pendingFor,
+  pixieList,
   stuckChats,
 } from "./selectors.ts";
 import { initialState, type State } from "./state.ts";
@@ -340,5 +342,47 @@ describe("the background bar's exchange", () => {
     const current = exchangeBackground(carried, [message(1, "2026-10-06T10:00:00Z")]);
     expect(current.items.map((i) => i.id)).toEqual(["over", "failed"]);
     expect([current.running, current.completed]).toEqual([0, 2]);
+  });
+});
+
+describe("pixies", () => {
+  const withPixies = (): State => ({
+    ...state([
+      session({ id: "s1", repo: "narrative" }),
+      session({
+        id: "s2",
+        repo: "narrative",
+        pixie_id: "a",
+        state: "running",
+        stuck: { reason: "silent", since: NOW, details: "No output." },
+      }),
+    ]),
+    pixies: {
+      b: pixie({ id: "b", position: 1 }),
+      a: pixie({ id: "a", position: 0 }),
+      h: pixie({ id: "h", position: 2, hidden: true }),
+    },
+  });
+
+  it("lists visible pixies by position", () => {
+    expect(pixieList(withPixies()).map((p) => p.id)).toEqual(["a", "b"]);
+  });
+
+  it("keeps pixie chats out of project lists, counts and the inbox", () => {
+    const s = withPixies();
+    const ids = chatLists(s, "narrative")
+      .groups.flatMap((g) => g.chats)
+      .map((e) => e.session?.id);
+    expect(ids).toEqual(["s1"]);
+    expect(stuckChats(s)).toEqual([]);
+    expect(isRunning(s, "narrative")).toBe(false);
+    expect(inboxGroups(s).flatMap((g) => g.stuck)).toEqual([]);
+  });
+
+  it("treats a session without pixie_id as a project chat", () => {
+    const old = { ...session({ id: "o", repo: "narrative" }) } as Partial<Session>;
+    delete old.pixie_id;
+    const s = state([old as Session]);
+    expect(chatLists(s, "narrative").groups).toHaveLength(1);
   });
 });
