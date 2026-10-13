@@ -2658,7 +2658,7 @@ async def test_crud(api: Api) -> None:
     created = await api.http.post("/api/pixies", json={"name": "Tester", "color": "#112233"})
     pid = created.json()["id"]
     listed = await api.http.get("/api/pixies")
-    patched = await api.http.patch(f"/api/pixies/{pid}", json={"mascot": "moth"})
+    patched = await api.http.patch(f"/api/pixies/{pid}", json={"mascot": "ghost"})
     bad = await api.http.post("/api/pixies", json={"name": "P", "slug": "plan"})
     taken = await api.http.post("/api/pixies", json={"name": "X", "slug": "tester"})
     unknown = await api.http.get("/api/pixies/nope")
@@ -2667,7 +2667,7 @@ async def test_crud(api: Api) -> None:
     assert created.status_code == 201
     assert created.json()["slug"] == "tester"
     assert [p["id"] for p in listed.json()] == [pid]
-    assert patched.json()["mascot"] == "moth"
+    assert patched.json()["mascot"] == "ghost"
     assert bad.status_code == 422
     assert taken.status_code == 409
     assert unknown.status_code == 404
@@ -2904,7 +2904,7 @@ Add to the `calls` table in `web/src/api/client.test.ts`:
 ```ts
   ["pixies", (a) => a.pixies(), "GET", "/api/pixies", undefined],
   ["createPixie", (a) => a.createPixie({ name: "Tester" }), "POST", "/api/pixies", { name: "Tester" }],
-  ["updatePixie", (a) => a.updatePixie("p 1", { mascot: "moth" }), "PATCH", "/api/pixies/p%201", { mascot: "moth" }],
+  ["updatePixie", (a) => a.updatePixie("p 1", { mascot: "ghost" }), "PATCH", "/api/pixies/p%201", { mascot: "ghost" }],
   ["deletePixie", (a) => a.deletePixie("p1"), "DELETE", "/api/pixies/p1", undefined],
   ["sendToPixie", (a) => a.sendToPixie("p1", "hi"), "POST", "/api/pixies/p1/messages", { text: "hi" }],
   ["resetPixie", (a) => a.resetPixie("p1"), "POST", "/api/pixies/p1/reset", undefined],
