@@ -167,7 +167,7 @@ Mac and iPhone behave alike (D056).
 ## 7. API and events (outline)
 
 - `GET/POST /api/pixies`, `GET/PATCH/DELETE /api/pixies/{id}`, `POST /api/pixies/{id}/reset`, `POST /api/pixies/{id}/duplicate`; `PATCH` takes `team_id` (null leaves the team)
-- `GET/POST /api/pixie-teams`, `PATCH/DELETE /api/pixie-teams/{id}` (name, handle, leader); `pixie.updated` also covers team changes
+- `GET/POST /api/pixie-teams`, `PATCH/DELETE /api/pixie-teams/{id}` (name, handle, leader); events `pixie_team.updated` and `pixie_team.deleted` (D077)
 - `GET/PUT /api/pixies/{id}/soul`, `/memory`, `GET /api/pixies/{id}/notes`, `GET/PUT /api/pixies/{id}/notes/{name}` (all with content hashes)
 - `GET/POST /api/pixies/{id}/habits`, `PATCH/DELETE .../habits/{hid}`, `POST .../habits/{hid}/run`, `GET .../habits/{hid}/runs`
 - `GET /api/pixies/{id}/activity`
