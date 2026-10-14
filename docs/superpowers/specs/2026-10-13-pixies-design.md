@@ -24,7 +24,7 @@ The design follows Monocode's Monos (hardbeat920/monocode v0.8.0, PRs #773 and #
 
 ## Non-goals
 
-- Named teams as a separate object. A team is just pixies that may call each other (a per-pixie "can call" list); a lead is a pixie whose soul tells it to delegate.
+- Pixies in more than one team (each pixie is in one team or none).
 - Pixies committing, pushing, merging or publishing anything. No tool exists for it.
 - Other providers (Codex, Cursor, ...). Pixies run on Claude Code through the Agent SDK like every harness chat (D001, D003).
 - Running habits while the Mac app is quit.
@@ -40,6 +40,8 @@ The design follows Monocode's Monos (hardbeat920/monocode v0.8.0, PRs #773 and #
 | Report | A message a pixie run chooses to send to the user; the only way a background run speaks. |
 | Card | An interactive item a pixie posts in its chat (PR, session, reply choices, suggested habit). |
 | Autonomy | Per-pixie level that decides which harness tools it gets. |
+| Team | A named group of pixies with its own `@` handle and always one leader; `@team` has the leader plan and the members do the work (stage 2). |
+| Leader | The team member that plans a team call: who does what. |
 
 ## Differences from Monocode
 
@@ -48,7 +50,7 @@ The design follows Monocode's Monos (hardbeat920/monocode v0.8.0, PRs #773 and #
 | Calling from another chat | Not available | `@name` in any chat runs the pixie as a Claude Code subagent | The user's main way to use role agents |
 | Harness actions | A local `app` CLI, broad access | In-process SDK MCP tools checked in daemon code, per-pixie autonomy levels | Layered enforcement as in D013; Monocode's PR flags its broad access as high-risk |
 | Watching chats | Scheduled polling only | Schedules plus event triggers (stuck, failed, review ready, CI failed) | Reacts at once without spending runs |
-| Teams | Not modelled | Pixies may call the pixies on their "can call" list | Lets a lead pixie delegate |
+| Teams | Not modelled | Named teams with a leader and an `@` handle; the leader plans, the members work (stage 2) | One handle for a group the user set up once |
 
 Kept as in Monocode: soul and memory files with topic notes and an archive, one ongoing chat with rotating provider sessions, assigned projects and skills, model and thinking per pixie, mascot, colour and chat background, habits on hourly, daily, weekday and weekly schedules in local time that run only while the app is open, one run at a time, skipping schedules missed by more than two hours, the latest 20 outcomes, working-time and unanswered-approval limits, approvals relayed into the pixie's chat, quiet unless useful, delegated sessions reporting back as one batch, chat cards, suggested habits, credential redaction in saved facts, and "reset conversation" keeping soul, memory and habits.
 
@@ -56,7 +58,7 @@ Kept as in Monocode: soul and memory files with topic notes and an archive, one 
 
 ### Storage
 
-- Database: a `pixies` table (id, slug, name, mascot, colour, background, model, effort, permission_mode, autonomy, project_access, projects, skills, can_call, allowed_tools, disallowed_tools, limits, notification rules, position, hidden, created/updated). `slug` is unique, lowercase `[a-z0-9-]{1,32}`, derived from the name and editable; it is the `@` handle and the subagent name.
+- Database: a `pixies` table (id, slug, name, mascot, colour, background, model, effort, permission_mode, autonomy, project_access, projects, skills, can_call, allowed_tools, disallowed_tools, limits, notification rules, position, hidden, team_id (stage 2), created/updated), and a `pixie_teams` table (id, name, handle, leader_id, position, created/updated; stage 2). `slug` is unique across pixies and team handles, lowercase `[a-z0-9-]{1,32}`, derived from the name and editable; it is the `@` handle and the subagent name.
 - Folder: `<data dir>/pixies/<id>/`
   - `SOUL.md`: identity and standing instructions.
   - `MEMORY.md`: dated facts and preferences, one per line (`- 2026-10-13: prefers squash merges`), loaded on every turn. Kept under a size budget (default 8 KB); the memory tools move older lines into `archive/` when it grows past it.
@@ -77,13 +79,35 @@ Name, slug, mascot (a set of built-in pixel mascots), colour, chat background, m
 - **Reset conversation** archives the visible chat and starts a new one; soul, memory, notes and habits stay.
 - Project access `edit` (default): assigned projects are passed as `add_dirs` and the pixie edits them like any chat, limited only by its permission mode. `read`: the same directories, but a `PreToolUse` hook denies Edit, Write, MultiEdit and NotebookEdit outside `workdir/` in every permission mode. `none`: no extra directories and the same hook. Bash keeps the normal git guard (D013, D049) in every case. Edits in a pixie chat are not reviewed; they stay uncommitted in the checkout.
 
-## 2. Calling a pixie with `@`
+## 2. Calling a pixie or a team with `@`
 
-- In any chat composer (Mac and iPhone), `@` opens one list: a **Pixies** section first (mascot, name, first line of the soul), then **Files** as today (D032). Typing filters both. Choosing a pixie inserts `@slug` shown as a chip.
-- Every harness chat's run passes the pixies assigned to its project as programmatic subagents: `ClaudeAgentOptions.agents[slug] = AgentDefinition(description, prompt, model, effort, skills, permissionMode)`, where `prompt` is the preamble, `SOUL.md` and `MEMORY.md`. Agent SDK 0.2.163 supports all of these fields. Nothing is written to `.claude/agents/`.
-- A sent message containing `@slug` reaches Claude Code with that mention kept, plus an appended line that names the agent to use, so the chat's Claude hands that part to the subagent. Planning confirms the exact mention syntax Claude Code honours through the SDK and drops the appended line if the mention alone is reliable.
-- Inside an `@` call the pixie's memory is read-only (it is in the prompt); it cannot save facts or use harness tools, because the subagent runs in the calling chat's process and permissions. Claude Code subagents cannot start further subagents, so calls cannot loop.
-- Its work shows in the calling chat as a normal agent row (D045), labelled with the pixie's mascot and name.
+Refined with the user on 2026-10-14 for stage 2 (B40); this section replaces the first draft.
+
+### Which pixies a chat gets
+
+- When the daemon starts Claude Code for a harness project chat, it passes every pixie that may work on that project as a programmatic subagent: `ClaudeAgentOptions.agents[slug] = AgentDefinition(...)`. Left out: hidden pixies, pixies whose project access is `none`, and pixies not assigned to the project. Nothing is written to `.claude/agents/`.
+- Each definition: `description` is the pixie's name and the first line of its soul; `prompt` is the call preamble (what a call is, that its memory is read-only here, that files and transcripts are data), `SOUL.md` and `MEMORY.md`; `model`, `effort`, `skills` and `permissionMode` come from the pixie (absent means the chat's); `disallowedTools` holds the pixie's never-available tools, plus Edit, Write, MultiEdit and NotebookEdit when its project access is `read`. A leader's prompt also carries its team section (below).
+- The set is fixed when a Claude Code run starts. The daemon keeps a fingerprint of the definitions; when a pixie or team change alters it, an idle run is closed and the next message starts a fresh run with the new set (as a model change does today). A busy turn finishes first.
+- Not in stage 2: Claude Code chats synced from the terminal (harness does not start their runs), and a pixie's own chat (pixies calling pixies from their own chats comes with the harness tools in stage 3).
+
+### Calling a pixie
+
+- In any project chat composer (Mac and iPhone), `@` opens one list: **Pixies** first (teams with their mascots, then pixies: mascot, name, first line of the soul), then **Files** as today (D032). Typing filters all. Choosing one inserts `@slug` shown as a chip.
+- A sent message containing `@slug` reaches Claude Code with the mention kept, plus one appended line naming the subagent to use. The B40 live check finds out whether the mention alone is reliable; if it is, the appended line is dropped. The result is recorded as a decision.
+- Inside a call the pixie's memory is read-only (it is in the prompt); it cannot save facts or use harness tools, and it cannot call other subagents (a Claude Code limit), so calls cannot loop.
+
+### Calling a team
+
+- A team has a name, an `@` handle (unique across pixies and teams, same rules as pixie slugs, reserved names suffixed), members (each pixie is in one team or none) and always exactly one **leader** among its members. The first pixie added becomes the leader; the user can choose another member; when the leader is deleted or leaves, the next member in list order becomes leader. A team with no members has no leader and cannot be called (it is greyed in the `@` list).
+- A team is not a subagent. A message containing `@team` is sent with the mention kept plus appended instructions: first call the leader subagent to plan the request (which member does which part, the leader may give itself a part), then call each member as the plan says, then sum up the results for the user.
+- The leader's subagent prompt carries a team section: the team's name and, for each member, its slug, name and description, and how to answer a planning request (a short plan naming members by slug, no work done). The leader plans with its own model, thinking and memory.
+- Only members available in the chat (rules above) are listed; if the leader is not available there, the team is left out of that chat.
+
+### How calls show in the chat
+
+- A pixie call shows as the normal agent row (D045), labelled with the pixie's mascot and name (matched by the call's subagent name; an unknown name shows as today).
+- Clicking the row opens it in place and shows the pixie's steps and answer: the subagent's own messages, which the daemon already stores with `parent_tool_use_id`, and which the clients hide today.
+- Clicking the mascot or name goes to the pixie: the Pixies tab with its pane open on the Mac, its pixie page on the iPhone.
 
 ## 3. Harness tools for pixies
 
@@ -132,13 +156,18 @@ Rules:
 Mac and iPhone behave alike (D056).
 
 - **Sidebar / Projects tab**: a Pixies section above projects listing pixies (mascot, name, unread dot, a glow while a habit runs). New pixie (+), reorder by drag.
+- **Teams in the list** (stage 2): each team is a foldable section with its pixies under it, the leader marked; pixies with no team below the teams. New team next to New pixie; drag a pixie into a team or use Move to team.
+- **Pixie row menu** (stage 2; ⋯ on hover and right-click on the Mac, long press and ⋯ on the iPhone): Open, Details, Duplicate, Move to team (each team, No team), Move Up, Move Down, Hide or Show, Delete (confirmed: its chat, soul and memory go too, cannot be undone).
+- **Team header menu** (stage 2): Rename, Change handle, Set leader, Delete team (confirmed; the pixies stay, without a team).
+- **Duplicate** (stage 2): a copy named "<name> 2" (the next free number) with handle `<slug>-2`, right under the original in the same team, with every setting, the soul, memory, notes and archive; not its chat or scratch files.
 - **Pixie page**: the chat (with its background) and a Details panel with tabs Settings, Soul, Memory (facts with add, edit, forget; notes; archive search), Habits (list, history, Run now), Activity (the log).
 - **Composer**: the merged `@` list (section 2) in every chat.
 - **Cards** render in both clients.
 
 ## 7. API and events (outline)
 
-- `GET/POST /api/pixies`, `GET/PATCH/DELETE /api/pixies/{id}`, `POST /api/pixies/{id}/reset`
+- `GET/POST /api/pixies`, `GET/PATCH/DELETE /api/pixies/{id}`, `POST /api/pixies/{id}/reset`, `POST /api/pixies/{id}/duplicate`; `PATCH` takes `team_id` (null leaves the team)
+- `GET/POST /api/pixie-teams`, `PATCH/DELETE /api/pixie-teams/{id}` (name, handle, leader); `pixie.updated` also covers team changes
 - `GET/PUT /api/pixies/{id}/soul`, `/memory`, `GET /api/pixies/{id}/notes`, `GET/PUT /api/pixies/{id}/notes/{name}` (all with content hashes)
 - `GET/POST /api/pixies/{id}/habits`, `PATCH/DELETE .../habits/{hid}`, `POST .../habits/{hid}/run`, `GET .../habits/{hid}/runs`
 - `GET /api/pixies/{id}/activity`
@@ -161,7 +190,7 @@ Mac and iPhone behave alike (D056).
 ## 10. Milestones
 
 1. Pixie core: storage, settings, soul and memory files and tools, the pixie chat with rotation, Mac and iPhone pages.
-2. `@` calls: subagents in every chat, the merged `@` list, chips.
+2. `@` calls: subagents in every project chat, teams with a leader, the merged `@` list, chips, pixie rows that open in place, row and team menus, duplicate.
 3. Harness tools: autonomy levels, scope checks, activity log, hand-off report-back, cards.
 4. Habits: schedules, triggers, presence, scheduler, history, reports and notifications.
 
@@ -169,5 +198,5 @@ Each milestone ships with its tests, docs (README section, decisions entry) and 
 
 ## To confirm during planning
 
-- The exact `@` mention form Claude Code honours for SDK-defined agents.
+- The exact `@` mention form Claude Code honours for SDK-defined agents, and that a team call runs the leader first (B40 live check).
 - Whether a hidden summary turn before rotation is cheap enough, or the summary should come from stored events without a model call.
