@@ -53,13 +53,20 @@
             pixieFiles = Self.samplePixieFiles
         }
 
-        /// Four git repositories and a plain folder, "recipes".
+        /// Four git repositories and a plain folder, "recipes". cv-page and llm-hunter show
+        /// pixie sprites as their icons, the others their initials.
         func repos() async throws -> [Repo] {
-            try ["cv-page", "narrative-engine", "llm-hunter", "harness", "recipes"].map { name in
+            let icons: [String: (mascot: String, color: String)] = [
+                "cv-page": ("cat", "#E2A16F"), "llm-hunter": ("frog", "#46A758"),
+            ]
+            return try ["cv-page", "narrative-engine", "llm-hunter", "harness", "recipes"].map {
+                name in
                 let git = name != "recipes"
                 return try decode([
                     "name": name, "path": "/Users/me/Personal projects/\(name)",
                     "default_branch": git ? "main" : NSNull(), "git": git,
+                    "icon": icons[name].map { $0.mascot as Any } ?? NSNull(),
+                    "icon_color": icons[name].map { $0.color as Any } ?? NSNull(),
                     "worktree": [
                         "default": true, "link": [], "setup": [], "setup_timeout_seconds": 900,
                     ],
@@ -83,6 +90,12 @@
             }
             repo.worktree.link = patch.link ?? repo.worktree.link
             repo.worktree.setup = patch.setup ?? repo.worktree.setup
+            if patch.changesIcon {
+                repo.icon = patch.icon
+            }
+            if patch.changesIconColor {
+                repo.iconColor = patch.iconColor
+            }
             return repo
         }
 
@@ -588,6 +601,10 @@
                 pixie.slug = pixie.id
                 pixie.name = request.name
                 pixie.mascot = request.mascot ?? .invader
+                pixie.color = request.color ?? pixie.color
+                pixie.background = request.background ?? pixie.background
+                // A new pixie has no chat before its first message.
+                pixie.chatSessionID = nil
                 pixie.position = pixieList.count
                 pixieList.append(pixie)
                 pixieFiles["\(pixie.id)/soul"] = request.soul ?? ""
