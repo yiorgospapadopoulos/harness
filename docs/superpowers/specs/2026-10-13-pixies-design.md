@@ -140,18 +140,23 @@ Rules:
 - **Schedule** (optional): hourly (at minute M), daily (at HH:MM), weekdays (at HH:MM) or weekly (day and HH:MM), in the Mac's local time.
 - **Triggers** (optional): `stuck`, `failed`, `review_ready`, `ci_failed`, on sessions in the pixie's projects, excluding pixie chats and habit runs. Events are batched; a triggered habit runs at most once per 5 minutes with every event since its last run in its prompt.
 - Created on the pixie's Habits page, by the pixie's `habit_*` tools, or from a suggested habit card.
-- **Only while the Mac app runs.** The Mac app sends `POST /api/clients/presence {client: "mac", running: true}` on launch and every 60 s, also while hidden or minimised, and `running: false` on quit; a report lapses after 150 s. The scheduler and triggers act only while a Mac presence is current. Talking to a pixie and `@` calls work whenever the daemon runs, from either client.
-- **Scheduler**: a daemon loop like the PR tracker (D034) checks every 15 s. One habit run at a time across all pixies; due runs queue in due order. A scheduled run more than 2 hours late is recorded as `skipped` and not run. Trigger events that arrive while the Mac app is not running are dropped (the next scheduled habit covers the gap).
+- **Whenever the daemon runs** (user, 2026-10-14, for B42; replaces the Mac presence rule): the scheduler and triggers act while the daemon runs, so habits keep working with the Mac app closed as long as the Mac is awake. There is no presence endpoint.
+- **Usage guard** (B42): while the 5-hour or weekly Claude usage (the existing usage numbers) is at 80 percent or more, scheduled and triggered runs are recorded as `skipped` (reason "usage") and not run; Run now still works.
+- **Scheduler**: a daemon loop like the PR tracker (D034) checks every 15 s. One habit run at a time across all pixies; due runs queue in due order. A scheduled run more than 2 hours late is recorded as `skipped` and not run. 
 - **A run**: a fresh provider session with role `habit_run`, the pixie preamble, soul, memory, note titles, the habit prompt (plus trigger events), the pixie's tools and autonomy. It is not shown in the pixie's chat while it runs. A `report` call posts the report into the pixie's chat as a card and starts a pixie turn so the user can reply in context. A run with no report ends silently.
 - **Approvals** from a run appear in the pixie's chat and in the inbox as usual. A run waiting on an unanswered approval for 15 minutes, or past its maximum run time, is interrupted and recorded as `stalled` or `timed_out`.
-- **History**: the latest 20 outcomes per habit (`reported`, `quiet`, `failed`, `stalled`, `timed_out`, `skipped`) with start time, duration, report title and a link to the run's transcript. Actions: Run now (works whenever the daemon runs), Pause, Resume, Edit, Delete.
+- **History**: the latest 20 outcomes per habit (`reported`, `quiet`, `failed`, `stalled`, `timed_out`, `skipped`) with start time, duration, report title and a link to the run's transcript. Actions: Run now, Pause, Resume, Edit, Delete.
 - Tables: `pixie_habits`, `pixie_habit_runs` (pruned to 20 per habit).
 
-## 5. Reports and notifications
+## 5. Reports, cards and notifications
 
-- `report(severity, title, body, link?)` with severity `info`, `warn` or `action`.
-- New notification kind `pixie_report` (on by default) with a per-pixie minimum severity for pushing to the phone (default `action`). Every report appears in the pixie's chat; `warn` and `action` also appear in the inbox. Quiet hours apply (D026).
+Refined with the user on 2026-10-14 for stage 4 (B42).
+
+- `report(severity, title, body, link?)` with severity `info`, `warn` or `action`, available to pixie chat runs and habit runs at every autonomy level.
+- New notification kind `pixie_report` (on by default) with a per-pixie minimum severity for pushing to the phone (default `action`). Every report appears in the pixie's chat as a report card; `warn` and `action` also appear in the inbox. Quiet hours apply (D026).
 - The Dock badge and sidebar count unread `action` reports.
+- Cards added in this stage: `choices` (up to 4 reply buttons; tapping one sends its text as the user's reply) and `habit_suggestion` (a proposed habit with Start, which creates and enables it; nothing runs until tapped), via `card(kind, ...)`.
+- Habit tools for the pixie (every autonomy level, its own habits only): `habit_list`, `habit_create`, `habit_update`, `habit_pause`.
 
 ## 6. Clients
 
@@ -173,7 +178,6 @@ Mac and iPhone behave alike (D056).
 - `GET/PUT /api/pixies/{id}/soul`, `/memory`, `GET /api/pixies/{id}/notes`, `GET/PUT /api/pixies/{id}/notes/{name}` (all with content hashes)
 - `GET/POST /api/pixies/{id}/habits`, `PATCH/DELETE .../habits/{hid}`, `POST .../habits/{hid}/run`, `GET .../habits/{hid}/runs`
 - `GET /api/pixies/{id}/activity`
-- `POST /api/clients/presence`
 - Events: `pixie.updated`, `pixie.report`, `pixie.card`, `habit.run_started`, `habit.run_ended`.
 
 ## 8. Security
@@ -185,7 +189,7 @@ Mac and iPhone behave alike (D056).
 
 ## 9. Testing
 
-- Daemon: unit tests for every tool's autonomy and scope checks, the scheduler (due calculation, DST changes, the 2-hour skip, one-at-a-time, presence lapse), triggers (batching, 5-minute limit, exclusions), rotation (threshold, summary, seeded prompt), hash conflicts, redaction, report routing and grouped hand-off messages. 100% coverage as for the rest of the daemon (D009).
+- Daemon: unit tests for every tool's autonomy and scope checks, the scheduler (due calculation, DST changes, the 2-hour skip, one-at-a-time, the usage guard), triggers (batching, 5-minute limit, exclusions), rotation (threshold, summary, seeded prompt), hash conflicts, redaction, report routing and grouped hand-off messages. 100% coverage as for the rest of the daemon (D009).
 - PWA and HarnessKit: the merged `@` list, chips, cards, pixie pages and habit history, with 100% coverage where the gates require it.
 - An end-to-end check with the real SDK that `agents=` subagents and `@` mentions work, recorded as a decision (D072).
 
@@ -194,7 +198,7 @@ Mac and iPhone behave alike (D056).
 1. Pixie core: storage, settings, soul and memory files and tools, the pixie chat with rotation, Mac and iPhone pages.
 2. `@` calls: subagents in every project chat, teams with a leader, the merged `@` list, chips, pixie rows that open in place, row and team menus, duplicate.
 3. Harness tools: autonomy levels, scope checks, limits, activity log, started-by and from labels, session and PR cards, hand-off report-back, pixie-to-pixie calls from pixie chats.
-4. Habits: schedules, triggers, presence, scheduler, history, reports and notifications.
+4. Habits: schedules, triggers, usage guard, scheduler, history, reports, notifications, reply and suggested-habit cards.
 
 Each milestone ships with its tests, docs (README section, decisions entry) and passing `make check` and `make check-apple`.
 
