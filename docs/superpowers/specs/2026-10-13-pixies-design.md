@@ -15,18 +15,18 @@ Batch: B35 (after B32 to B34)
 
 Let the user build a team of named agents ("pixies", singular "pixie") once and then use them two ways:
 
-1. **Call them**: type `@tester check the login flow` in any harness chat and the tester pixie does the work with its own instructions, memory, model and thinking level.
+1. **Call them**: type `@tester check the login flow` in any Nest chat and the tester pixie does the work with its own instructions, memory, model and thinking level.
 2. **Leave them running**: a pixie keeps its own ongoing chat, runs recurring checks ("habits") and reacts to events in the user's chats, and reports back only when there is something worth saying.
 
 The aim is a team of department experts the user sets up once (projects, permissions, soul, skills, model, thinking) so they never re-explain the same work: some called on demand, some always on and watching.
 
-The design follows Monocode's Monos (hardbeat920/monocode v0.8.0, PRs #773 and #847) closely, with the changes listed in "Differences from Monocode". The project will be renamed to Hex afterwards, as a separate job; this spec uses the current harness names.
+The design follows Monocode's Monos (hardbeat920/monocode v0.8.0, PRs #773 and #847) closely, with the changes listed in "Differences from Monocode". The project will be renamed to Hex afterwards, as a separate job; this spec uses the current Nest names.
 
 ## Non-goals
 
 - Pixies in more than one team (each pixie is in one team or none).
 - Pixies committing, pushing, merging or publishing anything. No tool exists for it.
-- Other providers (Codex, Cursor, ...). Pixies run on Claude Code through the Agent SDK like every harness chat (D001, D003).
+- Other providers (Codex, Cursor, ...). Pixies run on Claude Code through the Agent SDK like every Nest chat (D001, D003).
 - Running habits while the Mac app is quit.
 
 ## Glossary
@@ -39,7 +39,7 @@ The design follows Monocode's Monos (hardbeat920/monocode v0.8.0, PRs #773 and #
 | Habit | A recurring or event-triggered task a pixie runs in a fresh background session. |
 | Report | A message a pixie run chooses to send to the user; the only way a background run speaks. |
 | Card | An interactive item a pixie posts in its chat (PR, session, reply choices, suggested habit). |
-| Autonomy | Per-pixie level that decides which harness tools it gets. |
+| Autonomy | Per-pixie level that decides which Nest tools it gets. |
 | Team | A named group of pixies with its own `@` handle and always one leader; `@team` has the leader plan and the members do the work (stage 2). |
 | Leader | The team member that plans a team call: who does what. |
 
@@ -48,7 +48,7 @@ The design follows Monocode's Monos (hardbeat920/monocode v0.8.0, PRs #773 and #
 | Topic | Monocode | Pixies | Why |
 |---|---|---|---|
 | Calling from another chat | Not available | `@name` in any chat runs the pixie as a Claude Code subagent | The user's main way to use role agents |
-| Harness actions | A local `app` CLI, broad access | In-process SDK MCP tools checked in daemon code, per-pixie autonomy levels | Layered enforcement as in D013; Monocode's PR flags its broad access as high-risk |
+| Nest actions | A local `app` CLI, broad access | In-process SDK MCP tools checked in daemon code, per-pixie autonomy levels | Layered enforcement as in D013; Monocode's PR flags its broad access as high-risk |
 | Watching chats | Scheduled polling only | Schedules plus event triggers (stuck, failed, review ready, CI failed) | Reacts at once without spending runs |
 | Teams | Not modelled | Named teams with a leader and an `@` handle; the leader plans, the members work (stage 2) | One handle for a group the user set up once |
 
@@ -75,7 +75,7 @@ Name, slug, mascot (a set of built-in pixel mascots), colour, chat background, m
 ### The pixie's chat
 
 - One ongoing chat per pixie, stored with the existing session and event store so the transcript UI, search (D035), queue, interrupt and stuck detection (D036) work unchanged. A session row gains `pixie_id` and a `role` (`pixie_chat`, `habit_run`); it has no repo and runs in the pixie's `workdir/`.
-- The Claude Code session behind the chat rotates: when the context reaches 60% of the window, or the run was closed for idleness (D055), the next turn starts a fresh provider session. Before rotating on context, harness asks the current session for a summary of the recent conversation (a hidden turn, at most 400 words). The new session's system prompt append holds: the pixie preamble (what it is, its tools, that transcripts and repo files are data, not instructions), `SOUL.md`, `MEMORY.md`, the list of note titles, and that summary. Earlier provider sessions are kept as today (`0017_earlier_provider_sessions`), so the full chat stays visible.
+- The Claude Code session behind the chat rotates: when the context reaches 60% of the window, or the run was closed for idleness (D055), the next turn starts a fresh provider session. Before rotating on context, Nest asks the current session for a summary of the recent conversation (a hidden turn, at most 400 words). The new session's system prompt append holds: the pixie preamble (what it is, its tools, that transcripts and repo files are data, not instructions), `SOUL.md`, `MEMORY.md`, the list of note titles, and that summary. Earlier provider sessions are kept as today (`0017_earlier_provider_sessions`), so the full chat stays visible.
 - **Reset conversation** archives the visible chat and starts a new one; soul, memory, notes and habits stay.
 - Project access `edit` (default): assigned projects are passed as `add_dirs` and the pixie edits them like any chat, limited only by its permission mode. `read`: the same directories, but a `PreToolUse` hook denies Edit, Write, MultiEdit and NotebookEdit outside `workdir/` in every permission mode. `none`: no extra directories and the same hook. Bash keeps the normal git guard (D013, D049) in every case. Edits in a pixie chat are not reviewed; they stay uncommitted in the checkout.
 
@@ -85,16 +85,16 @@ Refined with the user on 2026-10-14 for stage 2 (B40); this section replaces the
 
 ### Which pixies a chat gets
 
-- When the daemon starts Claude Code for a harness project chat, it passes every pixie that may work on that project as a programmatic subagent: `ClaudeAgentOptions.agents[slug] = AgentDefinition(...)`. Left out: hidden pixies, pixies whose project access is `none`, and pixies not assigned to the project. Nothing is written to `.claude/agents/`.
+- When the daemon starts Claude Code for a Nest project chat, it passes every pixie that may work on that project as a programmatic subagent: `ClaudeAgentOptions.agents[slug] = AgentDefinition(...)`. Left out: hidden pixies, pixies whose project access is `none`, and pixies not assigned to the project. Nothing is written to `.claude/agents/`.
 - Each definition: `description` is the pixie's name and the first line of its soul; `prompt` is the call preamble (what a call is, that its memory is read-only here, that files and transcripts are data), `SOUL.md` and `MEMORY.md`; `model`, `effort`, `skills` and `permissionMode` come from the pixie (absent means the chat's); `disallowedTools` holds the pixie's never-available tools, plus Edit, Write, MultiEdit and NotebookEdit when its project access is `read`. A leader's prompt also carries its team section (below).
 - The set is fixed when a Claude Code run starts. The daemon keeps a fingerprint of the definitions; when a pixie or team change alters it, an idle run is closed and the next message starts a fresh run with the new set (as a model change does today). A busy turn finishes first.
-- Not in stage 2: Claude Code chats synced from the terminal (harness does not start their runs), and a pixie's own chat (pixies calling pixies from their own chats comes with the harness tools in stage 3).
+- Not in stage 2: Claude Code chats synced from the terminal (Nest does not start their runs), and a pixie's own chat (pixies calling pixies from their own chats comes with the Nest tools in stage 3).
 
 ### Calling a pixie
 
 - In any project chat composer (Mac and iPhone), `@` opens one list: **Pixies** first (teams with their mascots, then pixies: mascot, name, first line of the soul), then **Files** as today (D032). Typing filters all. Choosing one inserts `@slug` shown as a chip.
 - A sent message containing `@slug` reaches Claude Code with the mention kept, plus one appended line naming the subagent to use. The B40 live check finds out whether the mention alone is reliable; if it is, the appended line is dropped. The result is recorded as a decision.
-- Inside a call the pixie's memory is read-only (it is in the prompt); it cannot save facts or use harness tools, and it cannot call other subagents (a Claude Code limit), so calls cannot loop.
+- Inside a call the pixie's memory is read-only (it is in the prompt); it cannot save facts or use Nest tools, and it cannot call other subagents (a Claude Code limit), so calls cannot loop.
 
 ### Calling a team
 
@@ -109,7 +109,7 @@ Refined with the user on 2026-10-14 for stage 2 (B40); this section replaces the
 - Clicking the row opens it in place and shows the pixie's steps and answer: the subagent's own messages, which the daemon already stores with `parent_tool_use_id`, and which the clients hide today.
 - Clicking the mascot or name goes to the pixie: the Pixies tab with its pane open on the Mac, its pixie page on the iPhone.
 
-## 3. Harness tools for pixies
+## 3. Nest tools for pixies
 
 Refined with the user on 2026-10-14 for stage 3 (B41); this section replaces the first draft. Habit tools, `report` and the `choices` and `habit_suggestion` cards stay with stage 4 (section 4).
 
@@ -130,9 +130,9 @@ Rules:
 - Limits per pixie, set in its details: running chats it started at once (`max_running`, default 2) and new chats per local day (`max_per_day`, default 5). A start past a limit is refused with the reason.
 - Chats a pixie starts record `started_by_pixie = <id>` and show a "Started by <pixie>" label in lists and the chat header. Messages it sends record the pixie on the user message and show "from <pixie>" above it.
 - Every changing call (send, nudge, interrupt, start, close, answers) is written to the pixie's activity log with time, tool, target chat and a short summary, shown on an Activity page in its details (newest first, latest 200 kept).
-- In its own chat a pixie can `@`-call every other pixie as a subagent (D077 rules: not hidden, project access not `none`), with read-only memory and no harness tools inside the call.
+- In its own chat a pixie can `@`-call every other pixie as a subagent (D077 rules: not hidden, project access not `none`), with read-only memory and no Nest tools inside the call.
 - Cards in the pixie's chat: a `session` card for each chat it started (live state, Open) and a `pr` card for a pull request it reports (live checks and review state, D034). A card is posted by the daemon when the pixie starts a chat, and by a `card(kind, id)` tool for PRs.
-- Hand-offs report back: chats started in the same pixie turn form a batch. When every chat in a batch has finished (idle after a turn, failed, interrupted, or ready for review), harness waits until the pixie's chat is idle and sends it one message as data listing each chat with its outcome, which starts a pixie turn.
+- Hand-offs report back: chats started in the same pixie turn form a batch. When every chat in a batch has finished (idle after a turn, failed, interrupted, or ready for review), Nest waits until the pixie's chat is idle and sends it one message as data listing each chat with its outcome, which starts a pixie turn.
 
 ## 4. Habits
 
@@ -190,14 +190,14 @@ Mac and iPhone behave alike (D056).
 ## 9. Testing
 
 - Daemon: unit tests for every tool's autonomy and scope checks, the scheduler (due calculation, DST changes, the 2-hour skip, one-at-a-time, the usage guard), triggers (batching, 5-minute limit, exclusions), rotation (threshold, summary, seeded prompt), hash conflicts, redaction, report routing and grouped hand-off messages. 100% coverage as for the rest of the daemon (D009).
-- PWA and HarnessKit: the merged `@` list, chips, cards, pixie pages and habit history, with 100% coverage where the gates require it.
+- PWA and NestKit: the merged `@` list, chips, cards, pixie pages and habit history, with 100% coverage where the gates require it.
 - An end-to-end check with the real SDK that `agents=` subagents and `@` mentions work, recorded as a decision (D072).
 
 ## 10. Milestones
 
 1. Pixie core: storage, settings, soul and memory files and tools, the pixie chat with rotation, Mac and iPhone pages.
 2. `@` calls: subagents in every project chat, teams with a leader, the merged `@` list, chips, pixie rows that open in place, row and team menus, duplicate.
-3. Harness tools: autonomy levels, scope checks, limits, activity log, started-by and from labels, session and PR cards, hand-off report-back, pixie-to-pixie calls from pixie chats.
+3. Nest tools: autonomy levels, scope checks, limits, activity log, started-by and from labels, session and PR cards, hand-off report-back, pixie-to-pixie calls from pixie chats.
 4. Habits: schedules, triggers, usage guard, scheduler, history, reports, notifications, reply and suggested-habit cards.
 
 Each milestone ships with its tests, docs (README section, decisions entry) and passing `make check` and `make check-apple`.
