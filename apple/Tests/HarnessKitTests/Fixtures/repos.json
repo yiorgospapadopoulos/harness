@@ -3,6 +3,8 @@
     "name": "cv-page",
     "path": "/Users/example/projects/cv-page",
     "default_branch": "main",
+    "icon": null,
+    "icon_color": null,
     "worktree": {
       "default": true,
       "link": [
@@ -18,6 +20,8 @@
     "name": "llm-hunter",
     "path": "/Users/example/projects/llm-hunter",
     "default_branch": "develop",
+    "icon": "frog",
+    "icon_color": "#3DDC84",
     "worktree": {
       "default": false,
       "link": [],
