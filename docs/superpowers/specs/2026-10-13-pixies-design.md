@@ -5,11 +5,11 @@
 > - A pixie has project access (Edit by default, Read only, None) and per-pixie skills and tool rules; new pixies work on every project.
 > - Mascots are 10 pixel-art images from `design/mascots.toml`, with 10 preset colours plus a custom one.
 > - Reviewer and Tester templates, a per-pixie lock, reserved slugs suffixed (`@plan-2`) and the stale-file hash check were added.
-> - Not built yet: reordering, resetting Model and Thinking to Default, `@` calls, habits and the autonomy levels (stages 2 to 4). See D057.
+> - Not built yet: reordering, resetting Model and Thinking to Default, `@` calls, habits and the autonomy levels (stages 2 to 4). See D072.
 
 Date: 2026-10-13
 Status: design approved in conversation, awaiting spec review
-Batch: B34 (after B32/B33)
+Batch: B35 (after B32 to B34)
 
 ## Goal
 
@@ -156,7 +156,7 @@ Mac and iPhone behave alike (D056).
 
 - Daemon: unit tests for every tool's autonomy and scope checks, the scheduler (due calculation, DST changes, the 2-hour skip, one-at-a-time, presence lapse), triggers (batching, 5-minute limit, exclusions), rotation (threshold, summary, seeded prompt), hash conflicts, redaction, report routing and grouped hand-off messages. 100% coverage as for the rest of the daemon (D009).
 - PWA and HarnessKit: the merged `@` list, chips, cards, pixie pages and habit history, with 100% coverage where the gates require it.
-- An end-to-end check with the real SDK that `agents=` subagents and `@` mentions work, recorded as a decision (D057).
+- An end-to-end check with the real SDK that `agents=` subagents and `@` mentions work, recorded as a decision (D072).
 
 ## 10. Milestones
 

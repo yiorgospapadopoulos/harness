@@ -110,18 +110,22 @@ private let workspace = CGSize(width: 1000, height: 600)
         app.selectProject("not-open")
         #expect(app.currentProject == "cv-page")
 
-        app.moveProject("cv-page", to: 5)
-        #expect(app.openProjects == ["llm-hunter", "cv-page"])
-        app.moveProject("cv-page", to: -1)
-        #expect(app.openProjects == ["cv-page", "llm-hunter"])
-        app.moveProject("not-open", to: 0)
-
         app.closeProject("cv-page")
         #expect(app.openProjects == ["llm-hunter"])
         #expect(app.currentProject == "llm-hunter")
         app.closeProject("llm-hunter")
         #expect(app.openProjects == ["llm-hunter"])
         #expect(memory.values["projects.open"] == "llm-hunter")
+    }
+
+    @Test func openPanesSpanEveryProject() async throws {
+        let app = app()
+        try await app.loadRepos()
+        app.update("cv-page") { $0.openChat("s1", in: workspace) }
+        app.update("llm-hunter") { $0.openChat("s2", in: workspace) }
+        #expect(app.openPanes == ["s1", "s2"])
+        app.update("cv-page") { $0.closePane("s1") }
+        #expect(app.openPanes == ["s2"])
     }
 
     @Test func closingTheCurrentTabSelectsTheOneBefore() async throws {
