@@ -70,7 +70,7 @@ Kept as in Monocode: soul and memory files with topic notes and an archive, one 
 
 ### Settings (all editable, on the Mac and the iPhone)
 
-Name, slug, mascot (a set of built-in pixel mascots), colour, chat background, model, thinking level, permission mode, assigned projects (all or a list), assigned skills (all, or chosen from the user's Claude Code skills), tools that never ask and tools that are never available (Claude Code permission rules), autonomy level, project access (`edit` by default, `read` or `none`), "can call" list of other pixies, limits (section 3), notification rules (section 5). Hidden pixies keep running their habits but leave the sidebar and the `@` list. A default "Reviewer" and "Tester" are offered as one-tap templates when the user has no pixies; nothing is created without that tap.
+Name, slug, mascot (a set of built-in pixel mascots), colour, chat background, model, thinking level, permission mode, assigned projects (all or a list), assigned skills (all, or chosen from the user's Claude Code skills), tools that never ask and tools that are never available (Claude Code permission rules), autonomy level, project access (`edit` by default, `read` or `none`), limits (section 3; there is no "can call" list: since B41 every pixie may call every other, and the stored `can_call` field is unused), notification rules (section 5). Hidden pixies keep running their habits but leave the sidebar and the `@` list. A default "Reviewer" and "Tester" are offered as one-tap templates when the user has no pixies; nothing is created without that tap.
 
 ### The pixie's chat
 
@@ -111,26 +111,28 @@ Refined with the user on 2026-10-14 for stage 2 (B40); this section replaces the
 
 ## 3. Harness tools for pixies
 
-Each pixie chat and habit run gets one in-process SDK MCP server (`create_sdk_mcp_server`) named `pixie`, built for that pixie. Every tool checks the pixie's assigned projects and autonomy in daemon code before acting and returns a tool error with the reason when refused.
+Refined with the user on 2026-10-14 for stage 3 (B41); this section replaces the first draft. Habit tools, `report` and the `choices` and `habit_suggestion` cards stay with stage 4 (section 4).
 
-| Autonomy | Tools (each level includes the ones above) |
-|---|---|
-| always | `memory_read`, `memory_write(fact)`, `memory_forget`, `notes_search`, `note_read`, `note_write`, `soul_read`, `soul_write` (only when the user asked; the tool description says so), `report(severity, title, body, link?)`, `card(...)`, `habit_list`, `habit_create`, `habit_update`, `habit_pause`, `list_projects` |
-| observe | `list_sessions(project?, state?)`, `get_session`, `read_transcript(id, since?, limit)` (condensed: messages, tool call summaries, results, truncated), `list_inbox`, `pr_status` |
-| message | `send_message`, `nudge(id, reason)` (the stuck card's stop-and-redirect), `interrupt` |
-| start | `start_session(project, prompt, mode, model?, effort?, permission_mode?)`, `close_session` (only sessions it started; a worktree with unreviewed work is kept) |
-| answer | `answer_permission(allow/deny)`, `answer_question`, `approve_plan`, `keep_planning` |
-| never | approving reviews (commit, push, pull request), merging, removing projects or worktrees with work, changing settings. No tool exists. |
+Each pixie chat run gets one in-process SDK MCP server (`create_sdk_mcp_server`) named `pixie`, built for that pixie. Every tool checks the pixie's autonomy, its assigned projects and its limits in daemon code before acting, and returns a tool error with the reason when refused. The prompt is never trusted for this.
 
-Pixie runs also get the pixies on their "can call" list as subagents (section 2), so a lead pixie can `@reviewer` inside its own run. With `start`, a session it starts may mention a pixie in its first message.
+| Autonomy | Tools (each level includes the ones above) | Scope |
+|---|---|---|
+| always | `memory_read`, `memory_write`, `memory_forget`, `notes_search`, `note_read`, `note_write`, `soul_read`, `soul_write`, `list_projects` (stage 1) | its own files |
+| observe | `list_sessions(project?, state?)`, `get_session(id)`, `read_transcript(id, since?, limit?)` (condensed: messages, tool call summaries, results, truncated), `list_inbox`, `pr_status(id)` | all chats in its projects |
+| message | `send_message(id, text)`, `nudge(id, reason)` (the stuck card's stop-and-redirect), `interrupt(id)` | all chats in its projects |
+| start | `start_session(project, prompt, model?, effort?, permission_mode?)`, `close_session(id)` | its projects; close only chats it started |
+| answer | `answer_permission(approval, allow or deny, message?)`, `answer_question(approval, answers)`, `approve_plan(approval)`, `keep_planning(approval, feedback)` | only chats it started |
+| never | approving reviews (commit, push, pull request), merging, removing projects or worktrees with work, changing settings | no tool exists |
 
 Rules:
-- Sessions a pixie starts record `origin = pixie:<id>` and show a "Started by <pixie>" chip; messages it sends show "from <pixie>".
-- Every changing call is written to the pixie's activity log (viewable on its page).
-- Limits per pixie: running sessions it started (default 2), new sessions per day (default 5). `start_session` cannot ask for a looser permission mode than the pixie's own.
-- A pixie cannot act on pixie chats or habit runs (its own or others'); it can only reach them through `@` calls.
-- Hand-offs report back: when sessions a pixie started finish (finished, failed, interrupted, review ready), harness waits until the pixie's chat is idle and sends it one grouped message for every session started in the same pixie turn, which starts a pixie turn. While the Mac app is not running (section 4) these messages wait and are delivered when it starts.
-- `card` kinds: `pr` (live PR status, D034), `session` (live state with Open), `choices` (up to 4 reply buttons that send the chosen text), `habit_suggestion` (a proposed habit with Start, which creates and enables it; nothing runs until tapped).
+- A pixie never acts on pixie chats (its own or others'); `list_sessions` leaves them out.
+- `start_session` always starts the chat in a new app-managed worktree (D038), whatever the project's default, with git actions blocked as for every chat; the work is reviewed and merged by the user as usual. Its permission mode cannot be looser than the pixie's own (order: plan, default, acceptEdits, auto, bypassPermissions).
+- Limits per pixie, set in its details: running chats it started at once (`max_running`, default 2) and new chats per local day (`max_per_day`, default 5). A start past a limit is refused with the reason.
+- Chats a pixie starts record `started_by_pixie = <id>` and show a "Started by <pixie>" label in lists and the chat header. Messages it sends record the pixie on the user message and show "from <pixie>" above it.
+- Every changing call (send, nudge, interrupt, start, close, answers) is written to the pixie's activity log with time, tool, target chat and a short summary, shown on an Activity page in its details (newest first, latest 200 kept).
+- In its own chat a pixie can `@`-call every other pixie as a subagent (D077 rules: not hidden, project access not `none`), with read-only memory and no harness tools inside the call.
+- Cards in the pixie's chat: a `session` card for each chat it started (live state, Open) and a `pr` card for a pull request it reports (live checks and review state, D034). A card is posted by the daemon when the pixie starts a chat, and by a `card(kind, id)` tool for PRs.
+- Hand-offs report back: chats started in the same pixie turn form a batch. When every chat in a batch has finished (idle after a turn, failed, interrupted, or ready for review), harness waits until the pixie's chat is idle and sends it one message as data listing each chat with its outcome, which starts a pixie turn.
 
 ## 4. Habits
 
@@ -191,7 +193,7 @@ Mac and iPhone behave alike (D056).
 
 1. Pixie core: storage, settings, soul and memory files and tools, the pixie chat with rotation, Mac and iPhone pages.
 2. `@` calls: subagents in every project chat, teams with a leader, the merged `@` list, chips, pixie rows that open in place, row and team menus, duplicate.
-3. Harness tools: autonomy levels, scope checks, activity log, hand-off report-back, cards.
+3. Harness tools: autonomy levels, scope checks, limits, activity log, started-by and from labels, session and PR cards, hand-off report-back, pixie-to-pixie calls from pixie chats.
 4. Habits: schedules, triggers, presence, scheduler, history, reports and notifications.
 
 Each milestone ships with its tests, docs (README section, decisions entry) and passing `make check` and `make check-apple`.
