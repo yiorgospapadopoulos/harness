@@ -699,3 +699,10 @@ Spike run with `claude-agent-sdk` 0.2.163 and Claude Code 2.1.285, mostly on `cl
 - **Limit:** checkpoints cover Claude's file edit tools only; files changed by shell commands it ran are not restored, and both clients say so in the confirmation. Your own changes, made before or during the chat, are not touched unless Claude edited the same file.
 - **No dirty-checkout refusal:** `DirtyCheckoutError` and `allow_dirty` are removed; an in-place chat starts whatever the checkout holds. Its review still diffs against HEAD, so changes that were there before show in it; Approve commits only the files you pick.
 - **Supersedes:** the dirty-checkout check of D041. **Refines:** D062, D069.
+
+## D082 (2026-10-15): Reject says no to the changes and keeps the chat going (B54)
+
+- **Why:** with B53, Reject undid an in-place chat's edits and, as before, closed every chat, so the user could not tell Claude why. The user wants two outcomes: Approve commits; Reject says no to the changes, commits nothing, reverses nothing and keeps the chat open for further work.
+- **Reject:** `POST /api/sessions/{id}/reject` resolves the pending review as `rejected` and returns the session, still open, for both modes: no files are restored, no worktree or branch is removed. The next turn that leaves changes gets a new review as usual. Both clients reject without a confirmation (nothing is lost) and then open the chat with its composer focused.
+- **Discarding work:** closing or archiving the chat, as before.
+- **Supersedes:** the Reject parts of D081 (the dirty-checkout removal stays) and of D041 and D050 that closed the chat or removed its worktree on Reject.
