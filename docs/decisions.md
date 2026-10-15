@@ -734,3 +734,12 @@ Spike run with `claude-agent-sdk` 0.2.163 and Claude Code 2.1.285, mostly on `cl
 - **Review:** covers uncommitted changes only, HEAD against the working tree, in both modes. Claude's commits and branch moves are no longer violations: the ref audit, `git_violation`, `acknowledge_violation`, the review's `commits` list and the 409 `git_violation` and `hidden_history` refusals are removed. When Claude commits everything the review is superseded. Approve with nothing uncommitted is refused ("no changes to commit"); ask the chat to push or open the pull request instead. Worktree Approve and open PR pushes the branch with Claude's commits too.
 - **Supersedes:** D004 and D013 for normal chats; the ref audit parts of D053. **Refines:** D049, D050, D084.
 
+
+## D086 (2026-10-15): A quieter chat bar, a terminal that follows the chat, Other answers and Restart Nest (B60)
+
+- The chat top bar keeps the name and a status dot on the left (the status word moved to the dot's tooltip and label) and the place, time, pull request, maximize and close on the right; narrower panes drop the time, then the pull request, then shrink the place to its icon. The pane's "..." menu is gone; the pull request chip already opens it on GitHub. On the iPhone the dot sits next to the chat name and the status pill is gone.
+- The status bar's Terminal button opens a terminal in the focused chat's folder (its worktree when it has one), reusing one already open there; with no chat focused it keeps the project terminal.
+- Project tabs share one width (240 pt, about 25 characters), longer names truncate.
+- Questions end with an Other choice that opens a text box underneath, in the chat and in Needs you, on the Mac and the iPhone. It replaces the separate "Your own answer" field; Send waits for text while Other is chosen. The answer sent to Claude keeps its shape.
+- On the Mac an answered question stays in the chat as the user's answer (an option or the typed text) in a sent-message bubble under the question, instead of "Question resolved"; the iPhone shows it the same way, replacing its "Answered: ..." line.
+- Restart Nest (end of Settings): the Mac app restarts the service with `launchctl kickstart -k`, then reopens itself once it has quit. The iPhone calls `POST /api/service/restart` (device token required, 202); the daemon answers, then sends itself SIGTERM, shuts down as on a launchd stop (running turns are interrupted and resumable) and launchd starts it again; the page reloads once `/api/health` answers.
