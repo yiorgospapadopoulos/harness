@@ -715,3 +715,22 @@ Spike run with `claude-agent-sdk` 0.2.163 and Claude Code 2.1.285, mostly on `cl
 - **API:** repos carry `current_branch`; `GET /api/repos/{name}/branches` (no client uses it since the "From" picker was dropped); `POST /api/sessions` takes `branch` (a valid new name, 409 when it exists) and `base` (a local branch) for worktree chats only (422 otherwise). Nest still owns a worktree with a custom branch name: cleanup and removal follow the session's recorded branch.
 - **Not offered:** switching the project folder's branch from Nest (it would move every in-place chat at once) and moving a started chat between in place and a worktree.
 - **Refines:** D028, D038.
+
+## D084 (2026-10-15): Chats feel like chats; a quiet changes bar replaces the review card and Reject (B56)
+
+- **Why:** every turn that ended with any difference in the folder put up a "Ready for review" card with Approve and Reject, even a turn that only said hi, and even when the difference was files changed before the chat or kept after a reject; sending a message superseded the review, so the next turn made a new one. Chats felt like pull requests. The user wants to work across many messages and review once, when satisfied.
+- **When a review appears:** the daemon records the work's fingerprint when a turn starts and compares it when the turn ends. Only a turn that changed the work creates or replaces the review; a turn that changed nothing leaves a pending review as it is and sends the plain "finished" notice. A message no longer supersedes the pending review. Work that is back to no changes supersedes it. Without a recorded start (the daemon restarted during the turn) a turn with changes gets a review as before.
+- **How it shows:** a pending review is a one-line bar above the chat's composer ("N files changed", +/- counts, **Review**) instead of a card in the transcript; Review opens the diff with Approve as its only action (push, pull request and every guard unchanged). Superseded reviews are not shown in the transcript. The review still waits in the inbox.
+- **Approve label:** a worktree chat without a pull request says "Approve and open PR" (commit, push, open it); every other approve (in place, or a worktree with its pull request open) says "Approve and commit" and only commits, never pushing. Nothing in Nest pushes unless the user asked for it (general rule, user 2026-10-15); new commits reach an open pull request when the user pushes.
+- **No Reject:** `POST /api/sessions/{id}/reject` and every Reject for reviews are removed. To undo work, ask Claude in the chat, or close or archive the chat. Permission prompts keep their Reject.
+- **Not yet:** Approve splitting the work into medium commits named like the repo's history (B57, not authorized). An in-place review still counts files that were already changed in the checkout.
+- **Supersedes:** D082. **Refines:** D050.
+
+## D085 (2026-10-15): Chats use git like Claude Code; the review covers uncommitted changes only (B58)
+
+- **Why:** the user could not ask a chat to commit: every chat blocked `git commit`, `git push`, `gh pr create` and `gh pr merge` in four layers (D004, D013), ran without git or GitHub credentials, was told not to commit, and the daemon flagged any commit it had not made. Chats should behave like Claude Code chats, plus Nest's additions.
+- **Normal chats:** no git block, no credential stripping: git and `gh` work with the user's own login. The prompt Nest adds says to commit when the user asks and to push, open or merge a pull request only when the user explicitly asks in the chat (an instruction, as in the terminal; no extra Nest prompt, user 2026-10-15).
+- **Still blocked:** pixie chats, habit runs and chats a pixie started keep all four layers and the old prompt (D072, D078).
+- **Review:** covers uncommitted changes only, HEAD against the working tree, in both modes. Claude's commits and branch moves are no longer violations: the ref audit, `git_violation`, `acknowledge_violation`, the review's `commits` list and the 409 `git_violation` and `hidden_history` refusals are removed. When Claude commits everything the review is superseded. Approve with nothing uncommitted is refused ("no changes to commit"); ask the chat to push or open the pull request instead. Worktree Approve and open PR pushes the branch with Claude's commits too.
+- **Supersedes:** D004 and D013 for normal chats; the ref audit parts of D053. **Refines:** D049, D050, D084.
+
