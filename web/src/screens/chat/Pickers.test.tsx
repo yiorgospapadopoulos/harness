@@ -169,6 +169,8 @@ describe("thinking selector", () => {
       repo: "cv-page",
       prompt: "Go",
       attachment_ids: [],
+      mode: "worktree",
+      base: "main",
     });
   });
 });
